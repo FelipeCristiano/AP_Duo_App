@@ -15,11 +15,6 @@ export const theme = {
     success:   '#5a7a5a',
     danger:    '#b05a4a',
   },
-  fonts: {
-    heading: 'Cormorant_400Regular',
-    body:    'DMSans_400Regular',
-    bodyMd:  'DMSans_500Medium',
-  },
   radius: {
     sm: 8,
     md: 10,
