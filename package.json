@@ -1,7 +1,7 @@
 {
   "name": "ap_duo",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -27,6 +27,7 @@
     "react-native": "0.83.2",
     "react-native-paper": "^5.15.0",
     "react-native-safe-area-context": "^5.7.0",
+    "react-native-svg": "15.15.3",
     "react-native-web": "^0.21.0",
     "react-native-webview": "13.16.0",
     "zustand": "^5.0.12"

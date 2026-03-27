@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import { Project, getAllProjects, createProject, updateProject, deleteProject } from '@/services/db/projects'
+import {
+  Project,
+  getAllProjects,
+  createProject,
+  updateProject,
+  deleteProject,
+} from '@/services/db/projects'
 
 interface ProjectStore {
   projects:      Project[]
@@ -35,6 +41,8 @@ export const useProjectStore = create<ProjectStore>((set) => ({
 
   removeProject: async (id) => {
     await deleteProject(id)
-    set(state => ({ projects: state.projects.filter(p => p.id !== id) }))
+    set(state => ({
+      projects: state.projects.filter(p => p.id !== id)
+    }))
   },
 }))

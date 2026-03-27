@@ -165,7 +165,12 @@ export default function HomeScreen() {
         projects.map(async (p) => {
           const stats = await getProjectStats(p.id)
           const total = await getProjectTotal(p.id)
-          return { ...p, ...stats, total }
+          return {
+            ...p,
+            productCount:  stats.products,
+            categoryCount: stats.categories,
+            total,
+          }
         })
       )
       setCards(enriched)
