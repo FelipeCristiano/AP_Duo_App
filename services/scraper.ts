@@ -14,7 +14,7 @@ export function extractStore(url: string): string {
   try {
     const host = new URL(url).hostname.replace('www.', '')
     const known: Record<string, string> = {
-      // Lojas originais
+      // Lojas
       'tokstok.com.br':        'Tok&Stok',
       'madeiramadeira.com.br': 'MadeiraMadeira',
       'leroymerlin.com.br':    'Leroy Merlin',
@@ -24,8 +24,7 @@ export function extractStore(url: string): string {
       'amazon.com.br':         'Amazon',
       'ikea.com':              'IKEA',
       'camicado.com.br':       'Camicado',
-      'lojanathalia.com.br':   'Nathalia',
-      // Novas lojas
+      'lojanathalia.com.br':   'Loja Nathalia',
       'atelierclassico.com.br': 'Atelier Clássico',
       'casavee.com.br':         'Casavee',
       'decovie.com.br':         'DécoVie',

@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { useFocusEffect } from 'expo-router'
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, Alert, ActivityIndicator,
@@ -291,7 +292,11 @@ export default function ProjectScreen() {
     }
   }, [projectId])
 
-  useEffect(() => { loadProject() }, [loadProject])
+ useFocusEffect(
+  useCallback(() => {
+    loadProject()
+  }, [loadProject])
+)
 
   const handleDeleteProduct = useCallback((productId: number) => {
     Alert.alert(
