@@ -1,140 +1,158 @@
-import { useEffect, useState, useCallback } from 'react'
+// app/(tabs)/index.tsx
+import { useState, useCallback } from 'react'
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, RefreshControl, ActivityIndicator,
+  TouchableOpacity, RefreshControl, Alert, ActivityIndicator,
 } from 'react-native'
+import { Image } from 'expo-image'
 import { useFocusEffect, router } from 'expo-router'
 import { theme } from '@/constants/theme'
-import { useProjectStore } from '@/stores/projectStore'
-import { getProjectStats, getProjectTotal, Project } from '@/services/db/projects'
-import Svg, { Path, Line, Rect, Circle, Polyline } from 'react-native-svg'
-
-// ── Tipos ──────────────────────────────────────────────
-interface ProjectCardData extends Project {
-  productCount:  number
-  categoryCount: number
-  total:         number
-}
+import { getAllProjects, deleteProject, Project } from '@/services/db/projects'
+import { shareProjectPdf } from '@/services/pdfService'
+import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg'
 
 // ── Ícones ─────────────────────────────────────────────
-function IconGrid({ size = 13, color = theme.colors.inkLight }) {
+function IconPlus() {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
-      <Rect x={3} y={3} width={7} height={7} /><Rect x={14} y={3} width={7} height={7} />
-      <Rect x={14} y={14} width={7} height={7} /><Rect x={3} y={14} width={7} height={7} />
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none"
+      stroke={theme.colors.white} strokeWidth={2}>
+      <Line x1={12} y1={5} x2={12} y2={19} />
+      <Line x1={5} y1={12} x2={19} y2={12} />
     </Svg>
   )
 }
 
-function IconList({ size = 13, color = theme.colors.inkLight }) {
+function IconDownload({ color = theme.colors.inkLight }: { color?: string }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
-      <Line x1={4} y1={6} x2={20} y2={6} /><Line x1={4} y1={12} x2={20} y2={12} />
-      <Line x1={4} y1={18} x2={12} y2={18} />
-    </Svg>
-  )
-}
-
-function IconPlus({ size = 16, color = theme.colors.white }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.5}>
-      <Line x1={12} y1={5} x2={12} y2={19} /><Line x1={5} y1={12} x2={19} y2={12} />
-    </Svg>
-  )
-}
-
-function IconDownload({ size = 14, color = theme.colors.inkLight }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={1.8}>
       <Path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-      <Polyline points="7 10 12 15 17 10" /><Line x1={12} y1={15} x2={12} y2={3} />
+      <Polyline points="7 10 12 15 17 10" />
+      <Line x1={12} y1={15} x2={12} y2={3} />
     </Svg>
   )
 }
 
-function IconEdit({ size = 14, color = theme.colors.inkLight }) {
+function IconEdit({ color = theme.colors.inkLight }: { color?: string }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={1.8}>
       <Path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
       <Path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
     </Svg>
   )
 }
 
-// ── Badge de status ────────────────────────────────────
-const STATUS_LABEL: Record<string, string> = {
-  draft:  'Rascunho',
-  active: 'Ativo',
-  sent:   'Enviado',
-  done:   'Finalizado',
-}
-const STATUS_COLOR: Record<string, string> = {
-  draft:  theme.colors.inkLight,
-  active: theme.colors.success,
-  sent:   theme.colors.accent,
-  done:   theme.colors.inkMid,
+function IconTrash({ color = theme.colors.danger }: { color?: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={1.8}>
+      <Polyline points="3 6 5 6 21 6" />
+      <Path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+      <Path d="M10 11v6M14 11v6" />
+      <Path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+    </Svg>
+  )
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const color = STATUS_COLOR[status] ?? theme.colors.inkLight
+function IconFolder({ color = theme.colors.inkXLight }: { color?: string }) {
   return (
-    <View style={[styles.badge, { borderColor: color + '44', backgroundColor: color + '18' }]}>
-      <Text style={[styles.badgeText, { color }]}>
-        {status === 'active' ? '● ' : ''}{STATUS_LABEL[status] ?? status}
-      </Text>
-    </View>
+    <Svg width={48} height={48} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={1}>
+      <Path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+    </Svg>
   )
 }
 
 // ── Card de projeto ────────────────────────────────────
-function ProjectCard({ project, onPress }: { project: ProjectCardData; onPress: () => void }) {
-  const total = project.total > 0
-    ? project.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-    : null
+function ProjectCard({
+  project,
+  onPress,
+  onEdit,
+  onDelete,
+  onDownload,
+  downloading,
+}: {
+  project:     Project
+  onPress:     () => void
+  onEdit:      () => void
+  onDelete:    () => void
+  onDownload:  () => void
+  downloading: boolean
+}) {
+  const formattedDate = new Date(project.created_at ?? Date.now())
+    .toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={styles.card}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
       {/* Capa */}
-      <View style={[styles.cardCover, { backgroundColor: project.accent + '22' }]}>
-        <View style={[styles.cardCoverAccent, { backgroundColor: project.accent }]} />
-        <View style={styles.cardCoverPattern} />
+      <View style={styles.cardCover}>
+        {project.cover_uri ? (
+          <Image
+            source={{ uri: project.cover_uri }}
+            style={styles.cardCoverImage}
+            contentFit="cover"
+          />
+        ) : (
+          <View style={styles.cardCoverPlaceholder}>
+            <IconFolder />
+          </View>
+        )}
+        <View style={styles.cardCoverOverlay} />
       </View>
 
+      {/* Conteúdo */}
       <View style={styles.cardBody}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardClient} numberOfLines={1}>{project.client}</Text>
-          <StatusBadge status={project.status} />
-        </View>
-
-        <Text style={styles.cardName} numberOfLines={2}>{project.name}</Text>
-
-        <View style={styles.cardMeta}>
-          <View style={styles.cardMetaItem}>
-            <IconGrid />
-            <Text style={styles.cardMetaText}>{project.productCount} produtos</Text>
+        <View style={styles.cardTop}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {project.name}
+            </Text>
+            <Text style={styles.cardClient} numberOfLines={1}>
+              {project.client}
+            </Text>
           </View>
-          <View style={styles.cardMetaItem}>
-            <IconList />
-            <Text style={styles.cardMetaText}>{project.categoryCount} categorias</Text>
-          </View>
-          {total && (
-            <Text style={styles.cardTotal}>{total}</Text>
+          {project.type && (
+            <View style={styles.cardBadge}>
+              <Text style={styles.cardBadgeText}>{project.type}</Text>
+            </View>
           )}
         </View>
-      </View>
 
-      <View style={styles.cardFooter}>
-        <Text style={styles.cardDate}>
-          {new Date(project.updated_at).toLocaleDateString('pt-BR', {
-            day: '2-digit', month: 'short', year: 'numeric'
-          })}
-        </Text>
+        <Text style={styles.cardDate}>{formattedDate}</Text>
+
+        {/* Ações */}
         <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.iconBtn}>
-            <IconDownload />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}>
+          <TouchableOpacity
+            style={styles.cardActionBtn}
+            onPress={onEdit}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <IconEdit />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cardActionBtn}
+            onPress={onDelete}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <IconTrash />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.cardActionBtn, styles.cardActionDownload]}
+            onPress={onDownload}
+            disabled={downloading}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            {downloading
+              ? <ActivityIndicator size="small" color={theme.colors.white} />
+              : <IconDownload color={theme.colors.white} />
+            }
           </TouchableOpacity>
         </View>
       </View>
@@ -142,255 +160,290 @@ function ProjectCard({ project, onPress }: { project: ProjectCardData; onPress: 
   )
 }
 
-// ── Tela principal ─────────────────────────────────────
-type FilterType = 'all' | 'active' | 'sent' | 'draft'
-
+// ══════════════════════════════════════════════════════
+//  TELA PRINCIPAL
+// ══════════════════════════════════════════════════════
 export default function HomeScreen() {
-  const { projects, loading, fetchProjects } = useProjectStore()
-  const [cards, setCards]         = useState<ProjectCardData[]>([])
-  const [filter, setFilter]       = useState<FilterType>('all')
-  const [refreshing, setRefreshing] = useState(false)
+  const [projects,     setProjects]     = useState<Project[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [refreshing,   setRefreshing]   = useState(false)
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
 
-  // Recarrega toda vez que a tela ganha foco
-  useFocusEffect(
-    useCallback(() => {
-      fetchProjects()
-    }, [])
-  )
-
-  // Carrega stats de cada projeto
-  useEffect(() => {
-    async function loadStats() {
-      const enriched = await Promise.all(
-        projects.map(async (p) => {
-          const stats = await getProjectStats(p.id)
-          const total = await getProjectTotal(p.id)
-          return {
-            ...p,
-            productCount:  stats.products,
-            categoryCount: stats.categories,
-            total,
-          }
-        })
-      )
-      setCards(enriched)
+  const loadProjects = useCallback(async () => {
+    try {
+      const data = await getAllProjects()
+      setProjects(data)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
     }
-    if (projects.length > 0) loadStats()
-    else setCards([])
-  }, [projects])
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true)
-    await fetchProjects()
-    setRefreshing(false)
   }, [])
 
-  const filtered = filter === 'all'
-    ? cards
-    : cards.filter(p => p.status === filter)
+  useFocusEffect(
+    useCallback(() => { loadProjects() }, [loadProjects])
+  )
 
-  const FILTERS: { key: FilterType; label: string }[] = [
-    { key: 'all',    label: 'Todos' },
-    { key: 'active', label: 'Ativos' },
-    { key: 'sent',   label: 'Enviados' },
-    { key: 'draft',  label: 'Rascunhos' },
-  ]
+  const handleRefresh = () => {
+    setRefreshing(true)
+    loadProjects()
+  }
+
+  const handleDelete = (project: Project) => {
+    Alert.alert(
+      'Excluir projeto',
+      `Tem certeza que deseja excluir "${project.name}"? Esta ação não pode ser desfeita.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProject(project.id)
+              setProjects(prev => prev.filter(p => p.id !== project.id))
+            } catch {
+              Alert.alert('Erro', 'Não foi possível excluir o projeto.')
+            }
+          },
+        },
+      ]
+    )
+  }
+
+  const handleDownload = async (project: Project) => {
+    setDownloadingId(project.id)
+    try {
+      await shareProjectPdf(project.id)
+    } catch (e: any) {
+      Alert.alert('Erro ao gerar PDF', e?.message ?? 'Tente novamente.')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
+  const handleEdit = (project: Project) => {
+    router.push(`/project/edit/${project.id}`)
+  }
+
+  // ── Render ─────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={theme.colors.ink} />
+      </View>
+    )
+  }
 
   return (
     <View style={styles.container}>
 
-      {/* ── Top Bar ── */}
+      {/* Top Bar */}
       <View style={styles.topBar}>
-        <View>
-          <Text style={styles.topBarTitle}>AP Duo</Text>
-          <Text style={styles.topBarSub}>
-            {cards.length === 0 ? 'Nenhum projeto' : `${cards.length} projeto${cards.length > 1 ? 's' : ''}`}
-          </Text>
-        </View>
+        <Image
+          source={require('@/assets/images/Logo-Horizontal-edit-1.png')}
+          style={styles.logo}
+          contentFit="contain"
+        />
         <TouchableOpacity
-          style={styles.btnPrimary}
+          style={styles.btnNew}
           onPress={() => router.push('/(tabs)/new-project')}
           activeOpacity={0.85}
         >
           <IconPlus />
-          <Text style={styles.btnPrimaryText}>Novo</Text>
+          <Text style={styles.btnNewText}>Novo</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── Stats ── */}
-      {cards.length > 0 && (
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Projetos</Text>
-            <Text style={styles.statValue}>{cards.length}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Produtos</Text>
-            <Text style={styles.statValue}>{cards.reduce((a, c) => a + c.productCount, 0)}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total geral</Text>
-            <Text style={styles.statValue}>
-              {cards.reduce((a, c) => a + c.total, 0)
-                .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* ── Filtros ── */}
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filtersScroll}
-        contentContainerStyle={styles.filtersContent}
+        contentContainerStyle={[
+          styles.list,
+          projects.length === 0 && styles.listEmpty,
+        ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.inkLight}
+          />
+        }
+        showsVerticalScrollIndicator={false}
       >
-        {FILTERS.map(f => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterTab, filter === f.key && styles.filterTabActive]}
-            onPress={() => setFilter(f.key)}
-          >
-            <Text style={[styles.filterTabText, filter === f.key && styles.filterTabTextActive]}>
-              {f.label}
+        {projects.length === 0 ? (
+          <View style={styles.emptyState}>
+            <IconFolder />
+            <Text style={styles.emptyTitle}>Nenhum projeto ainda</Text>
+            <Text style={styles.emptySub}>
+              Toque em "Novo" para criar seu primeiro projeto.
             </Text>
-          </TouchableOpacity>
-        ))}
+          </View>
+        ) : (
+          projects.map(project => (
+            <ProjectCard
+              key={project.id}
+              project={project}
+              onPress={() => router.push(`/project/${project.id}`)}
+              onEdit={() => handleEdit(project)}
+              onDelete={() => handleDelete(project)}
+              onDownload={() => handleDownload(project)}
+              downloading={downloadingId === project.id}
+            />
+          ))
+        )}
       </ScrollView>
 
-      {/* ── Lista ── */}
-      {loading && cards.length === 0 ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={theme.colors.accent} />
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.list}
-          contentContainerStyle={[
-            styles.listContent,
-            filtered.length === 0 && styles.listEmpty,
-          ]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={theme.colors.accent}
-            />
-          }
-        >
-          {filtered.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>Nenhum projeto ainda</Text>
-              <Text style={styles.emptySub}>
-                Toque em "Novo" para criar sua primeira proposta
-              </Text>
-              <TouchableOpacity
-                style={styles.btnAccent}
-                onPress={() => router.push('/(tabs)/new-project')}
-              >
-                <IconPlus color={theme.colors.white} />
-                <Text style={styles.btnAccentText}>Criar projeto</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            filtered.map(project => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onPress={() => router.push(`/project/${project.id}`)}
-              />
-            ))
-          )}
-        </ScrollView>
-      )}
     </View>
   )
 }
 
 // ── Estilos ────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: theme.colors.bg },
+  container:  { flex: 1, backgroundColor: theme.colors.bg },
+  centered:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Top bar
-  topBar:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                   paddingHorizontal: theme.spacing.lg, paddingTop: 56, paddingBottom: 16,
-                   backgroundColor: theme.colors.bg },
-  topBarTitle:   { fontFamily: 'CormorantGaramond_400Regular', fontSize: 28, color: theme.colors.ink },
-  topBarSub:     { fontFamily: 'DMSans_400Regular', fontSize: 12, color: theme.colors.inkLight, marginTop: 2 },
+  topBar: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    justifyContent:   'space-between',
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop:        56,
+    paddingBottom:     16,
+    backgroundColor:   theme.colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  logo: {
+    height: 36,
+    width:  180,
+  },
+  btnNew: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    gap:            6,
+    backgroundColor: theme.colors.ink,
+    paddingHorizontal: 16,
+    paddingVertical:    10,
+    borderRadius:   theme.radius.sm,
+  },
+  btnNewText: {
+    fontFamily: theme.font.sansMedium,
+    fontSize:   13,
+    color:      theme.colors.white,
+  },
 
-  // Botão primário
-  btnPrimary:    { flexDirection: 'row', alignItems: 'center', gap: 6,
-                   backgroundColor: theme.colors.ink, paddingHorizontal: 16, paddingVertical: 10,
-                   borderRadius: theme.radius.sm },
-  btnPrimaryText:{ fontFamily: 'DMSans_500Medium', fontSize: 13, color: theme.colors.white },
-
-  // Stats
-  statsRow:      { flexDirection: 'row', gap: 10, paddingHorizontal: theme.spacing.lg, marginBottom: 8 },
-  statCard:      { flex: 1, backgroundColor: theme.colors.white, borderWidth: 1,
-                   borderColor: theme.colors.border, borderRadius: theme.radius.md,
-                   padding: 14, alignItems: 'center' },
-  statLabel:     { fontFamily: 'DMSans_400Regular', fontSize: 10, letterSpacing: 0.8,
-                   textTransform: 'uppercase', color: theme.colors.inkLight, marginBottom: 4 },
-  statValue:     { fontFamily: 'CormorantGaramond_400Regular', fontSize: 22, color: theme.colors.ink },
-
-  // Filtros
-  filtersScroll:   { flexGrow: 0, marginBottom: 8 },
-  filtersContent:  { paddingHorizontal: theme.spacing.lg, gap: 8, paddingVertical: 8 },
-  filterTab:       { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
-                     borderWidth: 1, borderColor: theme.colors.border,
-                     backgroundColor: theme.colors.white },
-  filterTabActive: { backgroundColor: theme.colors.ink, borderColor: theme.colors.ink },
-  filterTabText:   { fontFamily: 'DMSans_400Regular', fontSize: 12.5, color: theme.colors.inkMid },
-  filterTabTextActive: { color: theme.colors.white },
-
-  // Lista
-  list:          { flex: 1 },
-  listContent:   { paddingHorizontal: theme.spacing.lg, paddingBottom: 32, gap: 14 },
-  listEmpty:     { flex: 1 },
-  centered:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  // Card
-  card:          { backgroundColor: theme.colors.white, borderWidth: 1,
-                   borderColor: theme.colors.border, borderRadius: theme.radius.lg,
-                   overflow: 'hidden' },
-  cardCover:     { height: 10, position: 'relative' },
-  cardCoverAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
-  cardCoverPattern: { flex: 1 },
-  cardBody:      { padding: 18 },
-  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between',
-                   alignItems: 'center', marginBottom: 6 },
-  cardClient:    { fontFamily: 'DMSans_400Regular', fontSize: 11, letterSpacing: 0.8,
-                   textTransform: 'uppercase', color: theme.colors.inkLight, flex: 1, marginRight: 8 },
-  cardName:      { fontFamily: 'CormorantGaramond_400Regular', fontSize: 20,
-                   color: theme.colors.ink, marginBottom: 12, lineHeight: 26 },
-  cardMeta:      { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  cardMetaItem:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  cardMetaText:  { fontFamily: 'DMSans_400Regular', fontSize: 12, color: theme.colors.inkLight },
-  cardTotal:     { marginLeft: 'auto', fontFamily: 'CormorantGaramond_400Regular',
-                   fontSize: 16, color: theme.colors.accent },
-
-  // Badge
-  badge:         { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
-  badgeText:     { fontFamily: 'DMSans_500Medium', fontSize: 10.5 },
-
-  // Footer do card
-  cardFooter:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                   paddingHorizontal: 18, paddingVertical: 12,
-                   borderTopWidth: 1, borderTopColor: theme.colors.border },
-  cardDate:      { fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkXLight },
-  cardActions:   { flexDirection: 'row', gap: 8 },
-  iconBtn:       { width: 32, height: 32, borderRadius: 8, borderWidth: 1,
-                   borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  list:      { padding: theme.spacing.lg, gap: 16 },
+  listEmpty: { flex: 1 },
 
   // Empty state
-  emptyState:    { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyTitle:    { fontFamily: 'CormorantGaramond_300Light', fontSize: 24,
-                   color: theme.colors.inkMid, marginBottom: 8 },
-  emptySub:      { fontFamily: 'DMSans_400Regular', fontSize: 13, color: theme.colors.inkLight,
-                   textAlign: 'center', marginBottom: 28, paddingHorizontal: 32 },
-  btnAccent:     { flexDirection: 'row', alignItems: 'center', gap: 8,
-                   backgroundColor: theme.colors.accent, paddingHorizontal: 20,
-                   paddingVertical: 12, borderRadius: theme.radius.sm },
-  btnAccentText: { fontFamily: 'DMSans_500Medium', fontSize: 13, color: theme.colors.white },
+  emptyState: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12,
+    paddingTop: 80,
+  },
+  emptyTitle: {
+    fontFamily: theme.font.serif,
+    fontSize:   24,
+    color:      theme.colors.inkMid,
+  },
+  emptySub: {
+    fontFamily: theme.font.sans,
+    fontSize:   14,
+    color:      theme.colors.inkLight,
+    textAlign:  'center',
+    lineHeight: 22,
+  },
+
+  // Card
+  card: {
+    backgroundColor: theme.colors.white,
+    borderRadius:    theme.radius.md,
+    overflow:        'hidden',
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+  },
+  cardCover: {
+    height:   160,
+    position: 'relative',
+  },
+  cardCoverImage: {
+    width:  '100%',
+    height: '100%',
+  },
+  cardCoverPlaceholder: {
+    flex:            1,
+    backgroundColor: theme.colors.bgPanel,
+    alignItems:      'center',
+    justifyContent:  'center',
+  },
+  cardCoverOverlay: {
+    position:        'absolute',
+    bottom:          0,
+    left:            0,
+    right:           0,
+    height:          60,
+    backgroundColor: 'transparent',
+  },
+
+  cardBody: {
+    padding: theme.spacing.md,
+    gap:     8,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems:    'flex-start',
+    gap:           8,
+  },
+  cardTitle: {
+    fontFamily: theme.font.serif,
+    fontSize:   20,
+    color:      theme.colors.ink,
+    lineHeight: 26,
+  },
+  cardClient: {
+    fontFamily: theme.font.sans,
+    fontSize:   13,
+    color:      theme.colors.inkMid,
+  },
+  cardBadge: {
+    backgroundColor: theme.colors.bgPanel,
+    borderRadius:    theme.radius.xs,
+    paddingHorizontal: 8,
+    paddingVertical:   4,
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+  },
+  cardBadgeText: {
+    fontFamily: theme.font.sans,
+    fontSize:   10,
+    color:      theme.colors.inkMid,
+    letterSpacing: 0.5,
+  },
+  cardDate: {
+    fontFamily: theme.font.sans,
+    fontSize:   11,
+    color:      theme.colors.inkLight,
+  },
+
+  // Ações do card
+  cardActions: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    gap:            8,
+    marginTop:      4,
+    justifyContent: 'flex-end',
+  },
+  cardActionBtn: {
+    width:           40,
+    height:          40,
+    borderRadius:    theme.radius.sm,
+    backgroundColor: theme.colors.bgPanel,
+    alignItems:      'center',
+    justifyContent:  'center',
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+  },
+  cardActionDownload: {
+    backgroundColor: theme.colors.ink,
+    borderColor:     theme.colors.ink,
+  },
 })
