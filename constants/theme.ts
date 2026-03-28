@@ -1,30 +1,58 @@
+// constants/theme.ts
+
 export const theme = {
   colors: {
-    bg:        '#f4f1ec',
-    bgCard:    '#faf9f7',
-    bgPanel:   '#edeae3',
-    white:     '#ffffff',
-    ink:       '#1c1a17',
-    inkMid:    '#5a5750',
-    inkLight:  '#9a9690',
-    inkXLight: '#c8c5bf',
-    accent:    '#8c7355',
-    accentLt:  '#b9a48a',
-    border:    '#dedad3',
-    borderDk:  '#c8c4bb',
-    success:   '#5a7a5a',
-    danger:    '#b05a4a',
+    // ── Fundos ──────────────────────────────────────
+    bg:       '#F5F2ED',   // off-white quente (fundo principal)
+    bgPanel:  '#EDE9E3',   // painel levemente mais escuro
+    bgCard:   '#FAF8F5',   // cards e tabelas
+    white:    '#FFFFFF',
+
+    // ── Tipografia ───────────────────────────────────
+    ink:       '#1A1A1A',  // texto principal
+    inkMid:    '#4A4540',  // texto secundário
+    inkLight:  '#8A8070',  // labels, hints
+    inkXLight: '#C4BAB0',  // placeholders
+
+    // ── Bordas ───────────────────────────────────────
+    border:   '#E3DDD6',
+    borderDk: '#CEC7BE',
+
+    // ── Accent APduo ─────────────────────────────────
+    // Extraído do logo horizontal colorido:
+    // letras em preto + detalhe bege/dourado suave
+    accent:   '#1A1A1A',   // cor primária de ação (botões, destaques)
+    accentBg: '#EDE9E3',   // fundo de elementos com accent
+
+    // ── Semânticas ───────────────────────────────────
+    success: '#5A7A5A',
+    danger:  '#B85450',
+    warning: '#A07840',
   },
-  radius: {
-    sm: 8,
-    md: 10,
-    lg: 16,
-  },
+
   spacing: {
-    xs: 4,
-    sm: 8,
-    md: 16,
-    lg: 24,
-    xl: 36,
-  }
-}
+    xs:  4,
+    sm:  8,
+    md:  16,
+    lg:  24,
+    xl:  32,
+    xxl: 48,
+  },
+
+  radius: {
+    xs:  4,
+    sm:  8,
+    md:  12,
+    lg:  16,
+    xl:  24,
+    full: 999,
+  },
+
+  font: {
+    serif:       'CormorantGaramond_400Regular',
+    serifLight:  'CormorantGaramond_300Light',
+    serifMedium: 'CormorantGaramond_500Medium',
+    sans:        'DMSans_400Regular',
+    sansMedium:  'DMSans_500Medium',
+  },
+} as const

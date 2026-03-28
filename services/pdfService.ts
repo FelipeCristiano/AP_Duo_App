@@ -1,86 +1,96 @@
 // services/pdfService.ts
 import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
-import { getProjectById, Project } from './db/projects'
-import { getCategoriesByProject, getProductsByCategory, parseVariations } from './db/products'
-import { buildPdfHtml, urlToBase64, RoomSection } from './pdfTemplate'
+import { getProjectById } from './db/projects'
+import { getCategoriesByProject, getProductsByCategory } from './db/products'
+import { buildPdfHtml, RoomSection } from './pdfTemplate'
 
 export interface PdfGenerationResult {
   uri:      string
   fileName: string
 }
 
-// ── Orquestra a geração completa do PDF ───────────────
+// ── Converte URI para base64 sem expo-file-system ─────
+async function toBase64(uri: string | null | undefined): Promise<string | null> {
+  if (!uri) return null
+  try {
+    if (uri.startsWith('data:')) return uri
+
+    const response = await fetch(uri)
+    if (!response.ok) return null
+
+    const blob   = await response.blob()
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result as string)
+      reader.onerror   = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+// ── Gera o PDF completo ───────────────────────────────
 export async function generateProjectPdf(
   projectId: number
 ): Promise<PdfGenerationResult> {
 
-  // 1. Busca o projeto
   const project = await getProjectById(projectId)
   if (!project) throw new Error(`Projeto ${projectId} não encontrado`)
 
-  // 2. Busca categorias (cômodos)
   const categories = await getCategoriesByProject(projectId)
   if (categories.length === 0) throw new Error('Projeto sem cômodos cadastrados')
 
-  // 3. Busca produtos de cada cômodo e monta sections
+  const coverBase64 = await toBase64(project.cover_uri)
+
   const roomSections: RoomSection[] = []
 
   for (const category of categories) {
     const products = await getProductsByCategory(category.id)
-
     if (products.length === 0) continue
 
-    const subtotal = products.reduce((sum, p) => {
-      return sum + (p.price ?? 0) * (p.quantity ?? 1)
-    }, 0)
+    const mappedProducts = await Promise.all(
+      products.slice(0, 8).map(async p => ({
+        name:        p.name,
+        store:       p.store       ?? null,
+        description: p.description ?? null,
+        variations:  p.variations  ?? null,
+        notes:       p.notes       ?? null,
+        quantity:    p.quantity    ?? 1,
+        price:       p.price       ?? 0,
+        imageBase64: await toBase64(p.image_uri),
+      }))
+    )
 
-    roomSections.push({ category, products, subtotal })
+    roomSections.push({ name: category.name, products: mappedProducts })
   }
 
   if (roomSections.length === 0) {
     throw new Error('Nenhum produto encontrado nos cômodos')
   }
 
-  // 4. Converte imagens remotas para base64 em paralelo
-  //    (logo, cover e thumbs dos produtos)
-  const [logoBase64, coverBase64] = await Promise.all([
-    urlToBase64(project.logo_uri),
-    urlToBase64(project.cover_uri),
-  ])
-
-  // Converte thumbs de cada produto (limita a 8 por cômodo para não travar)
-  const thumbsMap = new Map<number, string>()
-
-  await Promise.all(
-    roomSections.flatMap(section =>
-      section.products.slice(0, 8).map(async product => {
-        if (product.image_uri) {
-          const b64 = await urlToBase64(product.image_uri)
-          if (b64) thumbsMap.set(product.id, b64)
-        }
-      })
-    )
+  const total = roomSections.reduce(
+    (sum, r) => sum + r.products.reduce((s, p) => s + p.price * p.quantity, 0),
+    0
   )
 
-  // 5. Monta o HTML
-  const total = roomSections.reduce((sum, r) => sum + r.subtotal, 0)
   const html = buildPdfHtml({
-    project,
-    rooms: roomSections,
-    logoBase64,
+    project: {
+      name:         project.name,
+      client:       project.client,
+      client_email: project.client_email ?? null,
+      description:  project.description  ?? null,
+      type:         project.type         ?? null,
+    },
+    rooms:      roomSections,
     coverBase64,
-    thumbsMap,
+    logoBase64: null,
     total,
   })
 
-  // 6. Gera o PDF via expo-print
-  const { uri } = await Print.printToFileAsync({
-    html,
-    base64: false,
-  })
+  const { uri } = await Print.printToFileAsync({ html, base64: false })
 
-  // 7. Retorna o URI e um nome amigável
   const safeName = project.name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -97,57 +107,67 @@ export async function generateProjectPdf(
   return { uri, fileName }
 }
 
-// ── Compartilha o PDF gerado ──────────────────────────
+// ── Compartilha o PDF ─────────────────────────────────
 export async function shareProjectPdf(projectId: number): Promise<void> {
   const { uri, fileName } = await generateProjectPdf(projectId)
 
   const canShare = await Sharing.isAvailableAsync()
-  if (!canShare) {
-    throw new Error('Compartilhamento não disponível neste dispositivo')
-  }
+  if (!canShare) throw new Error('Compartilhamento não disponível neste dispositivo')
 
   await Sharing.shareAsync(uri, {
-    mimeType: 'application/pdf',
+    mimeType:    'application/pdf',
     dialogTitle: `Compartilhar ${fileName}`,
-    UTI: 'com.adobe.pdf',
+    UTI:         'com.adobe.pdf',
   })
 }
 
-// ── Apenas imprime (útil no web/desktop) ─────────────
+// ── Apenas imprime ────────────────────────────────────
 export async function printProjectPdf(projectId: number): Promise<void> {
   const project = await getProjectById(projectId)
   if (!project) throw new Error(`Projeto ${projectId} não encontrado`)
 
-  const categories = await getCategoriesByProject(projectId)
+  const categories  = await getCategoriesByProject(projectId)
+  const coverBase64 = await toBase64(project.cover_uri)
   const roomSections: RoomSection[] = []
 
   for (const category of categories) {
     const products = await getProductsByCategory(category.id)
     if (products.length === 0) continue
-    const subtotal = products.reduce((sum, p) => sum + (p.price ?? 0) * (p.quantity ?? 1), 0)
-    roomSections.push({ category, products, subtotal })
+
+    const mappedProducts = await Promise.all(
+      products.slice(0, 8).map(async p => ({
+        name:        p.name,
+        store:       p.store       ?? null,
+        description: p.description ?? null,
+        variations:  p.variations  ?? null,
+        notes:       p.notes       ?? null,
+        quantity:    p.quantity    ?? 1,
+        price:       p.price       ?? 0,
+        imageBase64: await toBase64(p.image_uri),
+      }))
+    )
+
+    roomSections.push({ name: category.name, products: mappedProducts })
   }
 
-  const [logoBase64, coverBase64] = await Promise.all([
-    urlToBase64(project.logo_uri),
-    urlToBase64(project.cover_uri),
-  ])
-
-  const thumbsMap = new Map<number, string>()
-  await Promise.all(
-    roomSections.flatMap(section =>
-      section.products.slice(0, 8).map(async product => {
-        if (product.image_uri) {
-          const b64 = await urlToBase64(product.image_uri)
-          if (b64) thumbsMap.set(product.id, b64)
-        }
-      })
-    )
+  const total = roomSections.reduce(
+    (sum, r) => sum + r.products.reduce((s, p) => s + p.price * p.quantity, 0),
+    0
   )
 
-  const total = roomSections.reduce((sum, r) => sum + r.subtotal, 0)
-
-  const html = buildPdfHtml({ project, rooms: roomSections, logoBase64, coverBase64, thumbsMap, total })
+  const html = buildPdfHtml({
+    project: {
+      name:         project.name,
+      client:       project.client,
+      client_email: project.client_email ?? null,
+      description:  project.description  ?? null,
+      type:         project.type         ?? null,
+    },
+    rooms:      roomSections,
+    coverBase64,
+    logoBase64: null,
+    total,
+  })
 
   await Print.printAsync({ html })
 }
