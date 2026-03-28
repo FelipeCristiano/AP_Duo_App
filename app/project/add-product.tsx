@@ -24,7 +24,7 @@ function IconBack() {
     </Svg>
   )
 }
-function IconSearch({ color = theme.colors.inkLight }) {
+function IconSearch({ color = theme.colors.inkLight }: { color?: string }) {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"
       stroke={color} strokeWidth={2}>
@@ -33,7 +33,7 @@ function IconSearch({ color = theme.colors.inkLight }) {
     </Svg>
   )
 }
-function IconPlus({ color = theme.colors.white, size = 14 }) {
+function IconPlus({ color = theme.colors.white, size = 14 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
       stroke={color} strokeWidth={2}>
@@ -42,7 +42,7 @@ function IconPlus({ color = theme.colors.white, size = 14 }) {
     </Svg>
   )
 }
-function IconX({ color = theme.colors.inkLight, size = 12 }) {
+function IconX({ color = theme.colors.inkLight, size = 12 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
       stroke={color} strokeWidth={2.5}>
@@ -51,7 +51,7 @@ function IconX({ color = theme.colors.inkLight, size = 12 }) {
     </Svg>
   )
 }
-function IconCamera({ color = theme.colors.inkLight }) {
+function IconCamera({ color = theme.colors.inkLight }: { color?: string }) {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none"
       stroke={color} strokeWidth={1.6}>
@@ -60,7 +60,7 @@ function IconCamera({ color = theme.colors.inkLight }) {
     </Svg>
   )
 }
-function IconCheck({ color = theme.colors.white, size = 14 }) {
+function IconCheck({ color = theme.colors.white, size = 14 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
       stroke={color} strokeWidth={2.5}>

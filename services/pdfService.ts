@@ -4,6 +4,7 @@ import * as Sharing from 'expo-sharing'
 import { getProjectById } from './db/projects'
 import { getCategoriesByProject, getProductsByCategory } from './db/products'
 import { buildPdfHtml, RoomSection } from './pdfTemplate'
+import { getOfficeInfo } from './settings'
 
 export interface PdfGenerationResult {
   uri:      string
@@ -62,6 +63,7 @@ export async function generateProjectPdf(
   const total = rooms.reduce(
     (sum, r) => sum + r.products.reduce((s, p) => s + p.price * p.quantity, 0), 0
   )
+  const office = await getOfficeInfo()
   const html = buildPdfHtml({
     project: {
       name:         project.name,
@@ -74,6 +76,7 @@ export async function generateProjectPdf(
     coverBase64,
     logoBase64: null,
     total,
+    office,
   })
   const { uri } = await Print.printToFileAsync({ html, base64: false })
   const safeName = project.name
@@ -107,6 +110,7 @@ export async function printProjectPdf(projectId: number): Promise<void> {
   const total       = rooms.reduce(
     (sum, r) => sum + r.products.reduce((s, p) => s + p.price * p.quantity, 0), 0
   )
+  const office = await getOfficeInfo()
   const html = buildPdfHtml({
     project: {
       name:         project.name,
@@ -119,6 +123,7 @@ export async function printProjectPdf(projectId: number): Promise<void> {
     coverBase64,
     logoBase64: null,
     total,
+    office,
   })
   await Print.printAsync({ html })
 }
