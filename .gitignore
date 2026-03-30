@@ -3,6 +3,7 @@
 # dependencies
 node_modules/
 site_APduo/
+release/
 
 # Expo
 .expo/

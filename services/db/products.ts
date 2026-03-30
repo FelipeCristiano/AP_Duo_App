@@ -1,4 +1,4 @@
-import db from './database'
+import { getDb, isWeb } from './database'
 
 export interface Category {
   id:         number
@@ -8,8 +8,8 @@ export interface Category {
 }
 
 export interface ProductVariation {
-  label: string   // ex: "Cor"
-  value: string   // ex: "Cinza Chumbo"
+  label: string
+  value: string
 }
 
 export interface Product {
@@ -17,7 +17,7 @@ export interface Product {
   category_id: number
   name:        string
   description: string | null
-  variations:  string | null  // JSON stringificado de ProductVariation[]
+  variations:  string | null
   notes:       string | null
   image_uri:   string | null
   link:        string | null
@@ -27,21 +27,49 @@ export interface Product {
   created_at:  string
 }
 
-// ── Helpers de variações ───────────────────────────────
+// ── Helpers variações ──────────────────────────────────
 export function parseVariations(json: string | null): ProductVariation[] {
   if (!json) return []
   try { return JSON.parse(json) } catch { return [] }
 }
 
-export function stringifyVariations(variations: ProductVariation[]): string {
-  return JSON.stringify(variations)
+export function stringifyVariations(v: ProductVariation[]): string {
+  return JSON.stringify(v)
+}
+
+// ── Web storage helpers ────────────────────────────────
+function webGetCategories(): Category[] {
+  try {
+    return JSON.parse(localStorage.getItem('apduo_categories') || '[]')
+  } catch { return [] }
+}
+
+function webSaveCategories(cats: Category[]) {
+  localStorage.setItem('apduo_categories', JSON.stringify(cats))
+}
+
+function webGetProducts(): Product[] {
+  try {
+    return JSON.parse(localStorage.getItem('apduo_products') || '[]')
+  } catch { return [] }
+}
+
+function webSaveProducts(prods: Product[]) {
+  localStorage.setItem('apduo_products', JSON.stringify(prods))
+}
+
+function webNextId(items: { id: number }[]): number {
+  return items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1
 }
 
 // ── CATEGORIES ────────────────────────────────────────
 export async function getCategoriesByProject(
   projectId: number
 ): Promise<Category[]> {
-  return await db.getAllAsync<Category>(
+  if (isWeb) return webGetCategories()
+    .filter(c => c.project_id === projectId)
+    .sort((a, b) => a.order_idx - b.order_idx)
+  return await getDb().getAllAsync<Category>(
     `SELECT * FROM categories WHERE project_id = ? ORDER BY order_idx ASC`,
     [projectId]
   )
@@ -52,7 +80,14 @@ export async function createCategory(
   name: string,
   order: number
 ): Promise<number> {
-  const result = await db.runAsync(
+  if (isWeb) {
+    const cats = webGetCategories()
+    const id = webNextId(cats)
+    cats.push({ id, project_id: projectId, name, order_idx: order })
+    webSaveCategories(cats)
+    return id
+  }
+  const result = await getDb().runAsync(
     `INSERT INTO categories (project_id, name, order_idx) VALUES (?, ?, ?)`,
     [projectId, name, order]
   )
@@ -63,34 +98,55 @@ export async function updateCategory(
   id: number,
   name: string
 ): Promise<void> {
-  await db.runAsync(
-    `UPDATE categories SET name = ? WHERE id = ?`,
-    [name, id]
-  )
-}
-
-export async function reorderCategories(
-  ids: number[]
-): Promise<void> {
-  await Promise.all(
-    ids.map((id, idx) =>
-      db.runAsync(
-        `UPDATE categories SET order_idx = ? WHERE id = ?`,
-        [idx, id]
-      )
-    )
+  if (isWeb) {
+    const cats = webGetCategories()
+    const idx = cats.findIndex(c => c.id === id)
+    if (idx !== -1) { cats[idx].name = name; webSaveCategories(cats) }
+    return
+  }
+  await getDb().runAsync(
+    `UPDATE categories SET name = ? WHERE id = ?`, [name, id]
   )
 }
 
 export async function deleteCategory(id: number): Promise<void> {
-  await db.runAsync(`DELETE FROM categories WHERE id = ?`, [id])
+  if (isWeb) {
+    webSaveCategories(webGetCategories().filter(c => c.id !== id))
+    webSaveProducts(webGetProducts().filter(p => p.category_id !== id))
+    return
+  }
+  await getDb().runAsync(`DELETE FROM categories WHERE id = ?`, [id])
+}
+
+export async function reorderCategories(ids: number[]): Promise<void> {
+  if (isWeb) {
+    const cats = webGetCategories()
+    ids.forEach((id, idx) => {
+      const cat = cats.find(c => c.id === id)
+      if (cat) cat.order_idx = idx
+    })
+    webSaveCategories(cats)
+    return
+  }
+  await Promise.all(
+    ids.map((id, idx) =>
+      getDb().runAsync(
+        `UPDATE categories SET order_idx = ? WHERE id = ?`, [idx, id]
+      )
+    )
+  )
 }
 
 // ── PRODUCTS ──────────────────────────────────────────
 export async function getProductsByCategory(
   categoryId: number
 ): Promise<Product[]> {
-  return await db.getAllAsync<Product>(
+  if (isWeb) return webGetProducts()
+    .filter(p => p.category_id === categoryId)
+    .sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
+  return await getDb().getAllAsync<Product>(
     `SELECT * FROM products WHERE category_id = ? ORDER BY created_at ASC`,
     [categoryId]
   )
@@ -99,7 +155,12 @@ export async function getProductsByCategory(
 export async function getProductsByProject(
   projectId: number
 ): Promise<Product[]> {
-  return await db.getAllAsync<Product>(
+  if (isWeb) {
+    const cats = webGetCategories().filter(c => c.project_id === projectId)
+    return webGetProducts()
+      .filter(p => cats.some(c => c.id === p.category_id))
+  }
+  return await getDb().getAllAsync<Product>(
     `SELECT p.* FROM products p
      JOIN categories c ON p.category_id = c.id
      WHERE c.project_id = ?
@@ -111,9 +172,17 @@ export async function getProductsByProject(
 export async function createProduct(
   data: Omit<Product, 'id' | 'created_at'>
 ): Promise<number> {
-  const result = await db.runAsync(
+  if (isWeb) {
+    const prods = webGetProducts()
+    const id = webNextId(prods)
+    prods.push({ ...data, id, created_at: new Date().toISOString() })
+    webSaveProducts(prods)
+    return id
+  }
+  const result = await getDb().runAsync(
     `INSERT INTO products
-       (category_id, name, description, variations, notes, image_uri, link, price, quantity, store)
+       (category_id, name, description, variations, notes,
+        image_uri, link, price, quantity, store)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.category_id,
@@ -135,7 +204,16 @@ export async function updateProduct(
   id: number,
   data: Partial<Product>
 ): Promise<void> {
-  await db.runAsync(
+  if (isWeb) {
+    const prods = webGetProducts()
+    const idx = prods.findIndex(p => p.id === id)
+    if (idx !== -1) {
+      prods[idx] = { ...prods[idx], ...data }
+      webSaveProducts(prods)
+    }
+    return
+  }
+  await getDb().runAsync(
     `UPDATE products SET
        name        = COALESCE(?, name),
        description = COALESCE(?, description),
@@ -163,11 +241,20 @@ export async function updateProduct(
 }
 
 export async function deleteProduct(id: number): Promise<void> {
-  await db.runAsync(`DELETE FROM products WHERE id = ?`, [id])
+  if (isWeb) {
+    webSaveProducts(webGetProducts().filter(p => p.id !== id))
+    return
+  }
+  await getDb().runAsync(`DELETE FROM products WHERE id = ?`, [id])
 }
 
 export async function getCategoryTotal(categoryId: number): Promise<number> {
-  const result = await db.getFirstAsync<{ total: number }>(
+  if (isWeb) {
+    return webGetProducts()
+      .filter(p => p.category_id === categoryId)
+      .reduce((acc, p) => acc + p.price * p.quantity, 0)
+  }
+  const result = await getDb().getFirstAsync<{ total: number }>(
     `SELECT SUM(price * quantity) as total FROM products WHERE category_id = ?`,
     [categoryId]
   )

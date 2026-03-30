@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "electron:dev": "concurrently \"expo start --web\" \"wait-on http://localhost:8081 && electron main.js\"",
+    "electron:build": "expo export -p web && electron-builder --win"
   },
   "dependencies": {
     "@expo-google-fonts/cormorant-garamond": "^0.4.1",
@@ -23,6 +25,7 @@
     "expo-splash-screen": "~55.0.12",
     "expo-sqlite": "~55.0.11",
     "expo-status-bar": "~55.0.4",
+    "express": "^5.2.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.2",
@@ -35,7 +38,51 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "typescript": "~5.9.2"
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^41.1.0",
+    "electron-builder": "^26.8.1",
+    "typescript": "~5.9.2",
+    "wait-on": "^9.0.4"
+  },
+  "build": {
+    "appId": "com.apduo.app",
+    "productName": "APduo",
+    "asar": false,
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "directories": {
+      "output": "release",
+      "app": "."
+    },
+    "files": [
+      "dist/**/*",
+      "icon.ico",
+      "main.js",
+      "package.json",
+      "!node_modules/**",
+      "!site_APduo/**",
+      "!**/*.map",
+      "!**/*.ts",
+      "!.expo/**",
+      "!app/**",
+      "!assets/**",
+      "!services/**",
+      "!stores/**",
+      "!constants/**"
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "APduo"
+    }
   },
   "private": true
 }

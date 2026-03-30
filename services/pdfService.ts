@@ -1,6 +1,7 @@
 // services/pdfService.ts
 import * as Print from 'expo-print'
 import * as Sharing from 'expo-sharing'
+import { Platform } from 'react-native'
 import { getProjectById } from './db/projects'
 import { getCategoriesByProject, getProductsByCategory } from './db/products'
 import { buildPdfHtml, RoomSection } from './pdfTemplate'
@@ -78,7 +79,15 @@ export async function generateProjectPdf(
     total,
     office,
   })
-  const { uri } = await Print.printToFileAsync({ html, base64: false })
+  let uri: string
+  if (Platform.OS === 'web') {
+    const w = window as any
+    if (!w.electron?.printToPDF) throw new Error('Geração de PDF não disponível neste ambiente')
+    uri = await w.electron.printToPDF(html)
+  } else {
+    const result = await Print.printToFileAsync({ html, base64: false })
+    uri = result.uri
+  }
   const safeName = project.name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -93,6 +102,11 @@ export async function generateProjectPdf(
 
 export async function shareProjectPdf(projectId: number): Promise<void> {
   const { uri, fileName } = await generateProjectPdf(projectId)
+  if (Platform.OS === 'web') {
+    const w = window as any
+    if (w.electron?.openFile) await w.electron.openFile(uri)
+    return
+  }
   const canShare = await Sharing.isAvailableAsync()
   if (!canShare) throw new Error('Compartilhamento não disponível neste dispositivo')
   await Sharing.shareAsync(uri, {

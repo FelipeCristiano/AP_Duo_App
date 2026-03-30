@@ -1,9 +1,25 @@
-import * as SQLite from 'expo-sqlite'
+import { Platform } from 'react-native'
+import type { SQLiteDatabase } from 'expo-sqlite'
 
-const db = SQLite.openDatabaseSync('apduo.db')
+export const isWeb = Platform.OS === 'web'
 
-export async function initDatabase() {
-  await db.execAsync(`
+let _db: SQLiteDatabase | null = null
+
+export function getDb(): SQLiteDatabase {
+  if (!_db) throw new Error('Banco não inicializado')
+  return _db
+}
+
+export async function initDatabase(): Promise<void> {
+  if (isWeb) {
+    console.log('Web/Electron: usando localStorage')
+    return
+  }
+
+  const SQLite = await import('expo-sqlite')
+  _db = SQLite.openDatabaseSync('apduo.db')
+
+  await _db.execAsync(`
     PRAGMA journal_mode = WAL;
 
     CREATE TABLE IF NOT EXISTS projects (
@@ -47,25 +63,18 @@ export async function initDatabase() {
     );
   `)
 
-  // Migração segura para bancos já existentes
   await runMigrations()
 }
 
-async function runMigrations() {
+async function runMigrations(): Promise<void> {
+  if (!_db) return
   const migrations = [
     `ALTER TABLE projects ADD COLUMN client_email TEXT`,
     `ALTER TABLE projects ADD COLUMN pdf_uri TEXT`,
     `ALTER TABLE products ADD COLUMN variations TEXT`,
     `ALTER TABLE products ADD COLUMN notes TEXT`,
   ]
-
   for (const sql of migrations) {
-    try {
-      await db.execAsync(sql)
-    } catch {
-      // Coluna já existe — ignora silenciosamente
-    }
+    try { await _db.execAsync(sql) } catch { }
   }
 }
-
-export default db
