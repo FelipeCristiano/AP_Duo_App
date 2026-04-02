@@ -2,12 +2,14 @@
 import { useState, useEffect } from 'react'
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, TextInput, Alert,
+  TouchableOpacity, TextInput,
   ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import * as FileSystem from 'expo-file-system/legacy'
 import { theme } from '@/constants/theme'
 import { getOfficeInfo, saveOfficeInfo, resetOfficeInfo, OfficeInfo } from '@/services/settings'
+import { invalidateCache } from '@/services/db/fileStore'
+import { showAlert, showConfirm } from '@/components/Dialog'
 import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg'
 
 const APP_VERSION = '1.0.0'
@@ -64,6 +66,17 @@ function IconInfo({ color = theme.colors.inkLight }: { color?: string }) {
   )
 }
 
+function IconExternal({ color = theme.colors.inkLight }: { color?: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={2}>
+      <Path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+      <Polyline points="15 3 21 3 21 9" />
+      <Line x1={10} y1={14} x2={21} y2={3} />
+    </Svg>
+  )
+}
+
 // ── Componentes auxiliares ─────────────────────────────
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
@@ -101,13 +114,14 @@ function Field({
 }
 
 function SettingRow({
-  icon, label, subtitle, onPress, danger,
+  icon, label, subtitle, onPress, danger, accessory,
 }: {
-  icon:      React.ReactNode
-  label:     string
-  subtitle?: string
-  onPress?:  () => void
-  danger?:   boolean
+  icon:       React.ReactNode
+  label:      string
+  subtitle?:  string
+  onPress?:   () => void
+  danger?:    boolean
+  accessory?: React.ReactNode
 }) {
   return (
     <TouchableOpacity
@@ -125,6 +139,7 @@ function SettingRow({
           <Text style={styles.settingSub} numberOfLines={3}>{subtitle}</Text>
         )}
       </View>
+      {accessory}
     </TouchableOpacity>
   )
 }
@@ -133,35 +148,93 @@ function SettingRow({
 //  TELA PRINCIPAL
 // ══════════════════════════════════════════════════════
 export default function SettingsScreen() {
-  const [office,    setOffice]    = useState<OfficeInfo>({ name: '', email: '', phone: '', address: '' })
-  const [saving,    setSaving]    = useState(false)
-  const [saved,     setSaved]     = useState(false)
-  const [cacheSize, setCacheSize] = useState<string>('Calculando...')
+  const [office,       setOffice]       = useState<OfficeInfo>({ name: '', email: '', phone: '', address: '' })
+  const [saving,       setSaving]       = useState(false)
+  const [saved,        setSaved]        = useState(false)
+  const [cacheSize,    setCacheSize]    = useState<string>('Calculando...')
+  const [dataPath,       setDataPath]       = useState<string>('')
+  const [changingPath,   setChangingPath]   = useState(false)
+  const [pdfPath,        setPdfPath]        = useState<string>('')
+  const [changingPdfPath, setChangingPdfPath] = useState(false)
 
   useEffect(() => {
     getOfficeInfo().then(setOffice)
     loadCacheSize()
+    loadDataPath()
+    loadPdfPath()
   }, [])
 
-  const loadCacheSize = async () => {
-    try {
-        const dir = FileSystem.cacheDirectory
-        if (!dir) { setCacheSize('0 MB'); return }
-        const info = await FileSystem.getInfoAsync(dir)
-        if (info.exists && 'size' in info && info.size) {
-        const mb = (info.size / 1024 / 1024).toFixed(1)
-        setCacheSize(`${mb} MB`)
-        } else {
-        setCacheSize('0 MB')
-        }
-    } catch {
-        setCacheSize('—')
-      }
+  const loadDataPath = async () => {
+    if (Platform.OS === 'web') {
+      const p = await (window as any).electron?.getDataPath?.()
+      setDataPath(p ?? '')
     }
+  }
+
+  const loadPdfPath = async () => {
+    if (Platform.OS === 'web') {
+      const p = await (window as any).electron?.getPdfPath?.()
+      setPdfPath(p ?? '')
+    }
+  }
+
+  const handleChangePdfFolder = async () => {
+    if (changingPdfPath) return
+    const newFolder: string | null = await (window as any).electron?.pickPdfFolder?.()
+    if (!newFolder) return
+    const ok = await showConfirm(
+      `Alterar pasta de PDFs para:\n\n${newFolder}`,
+      'Alterar pasta de PDFs',
+      { confirmText: 'Alterar' },
+    )
+    if (!ok) return
+    setChangingPdfPath(true)
+    try {
+      await (window as any).electron?.setPdfPath?.(newFolder)
+      setPdfPath(newFolder)
+    } catch {
+      await showAlert('Não foi possível alterar a pasta de PDFs.', 'Erro')
+    } finally {
+      setChangingPdfPath(false)
+    }
+  }
+
+  const handleResetPdfPath = async () => {
+    const ok = await showConfirm(
+      'Os PDFs passarão a ser salvos em Documentos.',
+      'Restaurar pasta padrão de PDFs',
+      { confirmText: 'Restaurar' },
+    )
+    if (!ok) return
+    await (window as any).electron?.setPdfPath?.(null)
+    const p = await (window as any).electron?.getPdfPath?.()
+    setPdfPath(p ?? '')
+  }
+
+  const handleOpenPdfFolder = async () => {
+    const p = await (window as any).electron?.getPdfPath?.()
+    if (p) await (window as any).electron?.openFile?.(p)   // openFile com pasta abre o Explorer
+  }
+
+  const loadCacheSize = async () => {
+    if (Platform.OS === 'web') { setCacheSize('—'); return }
+    try {
+      const dir = FileSystem.cacheDirectory
+      if (!dir) { setCacheSize('0 MB'); return }
+      const info = await FileSystem.getInfoAsync(dir)
+      if (info.exists && 'size' in info && info.size) {
+        setCacheSize(`${(info.size / 1024 / 1024).toFixed(1)} MB`)
+      } else {
+        setCacheSize('0 MB')
+      }
+    } catch {
+      setCacheSize('—')
+    }
+  }
 
   const handleSave = async () => {
     if (!office.name.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe o nome do escritório.')
+      await showAlert('Informe o nome do escritório.', 'Campo obrigatório')
       return
     }
     setSaving(true)
@@ -170,68 +243,100 @@ export default function SettingsScreen() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch {
-      Alert.alert('Erro', 'Não foi possível salvar as configurações.')
+      await showAlert('Não foi possível salvar as configurações.', 'Erro')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleReset = () => {
-    Alert.alert(
-      'Restaurar padrão',
+  const handleReset = async () => {
+    const ok = await showConfirm(
       'As informações voltarão para os dados originais da APduo.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Restaurar',
-          style: 'destructive',
-          onPress: async () => {
-            await resetOfficeInfo()
-            const defaults = await getOfficeInfo()
-            setOffice(defaults)
-          },
-        },
-      ]
+      'Restaurar padrão',
+      { confirmText: 'Restaurar', danger: true },
     )
+    if (!ok) return
+    await resetOfficeInfo()
+    setOffice(await getOfficeInfo())
   }
 
-    const handleClearCache = () => {
-    Alert.alert(
-        'Limpar cache',
-        'Apagará imagens temporárias. Projetos e produtos não serão afetados.',
-        [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-            text: 'Limpar',
-            style: 'destructive',
-            onPress: async () => {
-            try {
-                const dir = FileSystem.cacheDirectory
-                if (!dir) return
-                const files = await FileSystem.readDirectoryAsync(dir)
-                const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
-                const toDelete = files.filter(f => {
-                const lower = f.toLowerCase()
-                return imageExtensions.some(ext => lower.endsWith(ext)) || f.startsWith('pdf_thumb_')
-                })
-                await Promise.all(
-                toDelete.map(f => FileSystem.deleteAsync(dir + f, { idempotent: true }))
-                )
-                await loadCacheSize()
-                Alert.alert('Cache limpo', 'Imagens temporárias removidas.')
-            } catch {
-                Alert.alert('Erro', 'Não foi possível limpar o cache.')
-            }
-            },
-        },
-        ]
+  const handleClearCache = async () => {
+    const ok = await showConfirm(
+      'Apagará imagens temporárias. Projetos e produtos não serão afetados.',
+      'Limpar cache',
+      { confirmText: 'Limpar', danger: true },
     )
+    if (!ok) return
+    if (Platform.OS === 'web') {
+      try {
+        await (window as any).electron?.clearCache?.()
+        setCacheSize('0 MB')
+        await showAlert('Imagens temporárias removidas.', 'Cache limpo')
+      } catch {
+        await showAlert('Não foi possível limpar o cache.', 'Erro')
+      }
+    } else {
+      try {
+        const dir = FileSystem.cacheDirectory
+        if (!dir) return
+        const files = await FileSystem.readDirectoryAsync(dir)
+        const exts = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+        await Promise.all(
+          files
+            .filter(f => exts.some(e => f.toLowerCase().endsWith(e)) || f.startsWith('pdf_thumb_'))
+            .map(f => FileSystem.deleteAsync(dir + f, { idempotent: true }))
+        )
+        await loadCacheSize()
+        await showAlert('Imagens temporárias removidas.', 'Cache limpo')
+      } catch {
+        await showAlert('Não foi possível limpar o cache.', 'Erro')
+      }
     }
+  }
 
-    const handleShowPdfDir = () => {
-    const dir = FileSystem.documentDirectory ?? 'Pasta padrão do sistema'
-    Alert.alert('Localização dos PDFs', `Os PDFs são salvos em:\n\n${dir}`)
+  const handleOpenDataFolder = async () => {
+    await (window as any).electron?.openDataFolder?.()
+  }
+
+  const handleChangeDataFolder = async () => {
+    if (changingPath) return
+    const newFolder: string | null = await (window as any).electron?.pickDataFolder?.()
+    if (!newFolder) return
+
+    const ok = await showConfirm(
+      `Alterar pasta de dados para:\n\n${newFolder}\n\nOs dados existentes serão copiados para a nova pasta. O aplicativo será recarregado.`,
+      'Alterar pasta de dados',
+      { confirmText: 'Alterar' },
+    )
+    if (!ok) return
+
+    setChangingPath(true)
+    try {
+      await (window as any).electron?.setDataPath?.(newFolder)
+      invalidateCache()
+      await showAlert('Pasta alterada com sucesso. O aplicativo será recarregado.')
+      window.location.reload()
+    } catch {
+      await showAlert('Não foi possível alterar a pasta de dados.', 'Erro')
+    } finally {
+      setChangingPath(false)
     }
+  }
+
+  const handleResetDataPath = async () => {
+    const ok = await showConfirm(
+      'Os dados da pasta atual serão copiados para a pasta padrão. O aplicativo será recarregado.',
+      'Restaurar pasta de dados padrão',
+      { confirmText: 'Restaurar' },
+    )
+    if (!ok) return
+    await (window as any).electron?.setDataPath?.(null)
+    invalidateCache()
+    await showAlert('Pasta restaurada para o padrão. O aplicativo será recarregado.')
+    window.location.reload()
+  }
+
+  const isElectron = Platform.OS === 'web' && typeof (window as any).electron !== 'undefined'
 
   return (
     <KeyboardAvoidingView
@@ -308,18 +413,102 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── PDFs ── */}
-        <SectionHeader
-          title="PDFs"
-          subtitle="Onde os documentos gerados são armazenados."
-        />
-        <View style={styles.card}>
-          <SettingRow
-            icon={<IconFolder />}
-            label="Pasta de destino"
-            subtitle={FileSystem.documentDirectory ?? 'Pasta padrão do sistema'}
-            onPress={handleShowPdfDir}
-          />
-        </View>
+        {isElectron && (
+          <>
+            <SectionHeader
+              title="PDFs"
+              subtitle="Pasta onde os documentos gerados são salvos permanentemente."
+            />
+            <View style={styles.card}>
+              <View style={styles.dataPathRow}>
+                <View style={styles.settingIcon}><IconFolder /></View>
+                <View style={styles.settingBody}>
+                  <Text style={styles.settingLabel}>Pasta de destino</Text>
+                  <Text style={styles.dataPathText} numberOfLines={2} selectable>
+                    {pdfPath || '—'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.btnOpenFolder}
+                  onPress={handleOpenPdfFolder}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <IconExternal color={theme.colors.inkMid} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.rowDivider} />
+              <View style={styles.dataActions}>
+                <TouchableOpacity
+                  style={styles.btnDataAction}
+                  onPress={handleChangePdfFolder}
+                  disabled={changingPdfPath}
+                >
+                  {changingPdfPath
+                    ? <ActivityIndicator size="small" color={theme.colors.white} />
+                    : <Text style={styles.btnDataActionText}>Alterar pasta…</Text>
+                  }
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.btnDataAction, styles.btnDataActionSecondary]}
+                  onPress={handleResetPdfPath}
+                >
+                  <Text style={styles.btnDataActionSecondaryText}>Restaurar padrão</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* ── Dados ── */}
+        {isElectron && (
+          <>
+            <SectionHeader
+              title="Dados"
+              subtitle="Arquivo com todos os projetos e produtos."
+            />
+            <View style={styles.card}>
+              {/* Caminho atual */}
+              <View style={styles.dataPathRow}>
+                <View style={styles.settingIcon}><IconFolder /></View>
+                <View style={styles.settingBody}>
+                  <Text style={styles.settingLabel}>Pasta atual</Text>
+                  <Text style={styles.dataPathText} numberOfLines={2} selectable>
+                    {dataPath || '—'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.btnOpenFolder}
+                  onPress={handleOpenDataFolder}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <IconExternal color={theme.colors.inkMid} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              {/* Ações */}
+              <View style={styles.dataActions}>
+                <TouchableOpacity
+                  style={styles.btnDataAction}
+                  onPress={handleChangeDataFolder}
+                  disabled={changingPath}
+                >
+                  {changingPath
+                    ? <ActivityIndicator size="small" color={theme.colors.ink} />
+                    : <Text style={styles.btnDataActionText}>Alterar pasta…</Text>
+                  }
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.btnDataAction, styles.btnDataActionSecondary]}
+                  onPress={handleResetDataPath}
+                >
+                  <Text style={styles.btnDataActionSecondaryText}>Restaurar padrão</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
 
         {/* ── Armazenamento ── */}
         <SectionHeader
@@ -461,6 +650,62 @@ const styles = StyleSheet.create({
     fontFamily: theme.font.sansMedium,
     fontSize:   13,
     color:      theme.colors.white,
+  },
+
+  // Seção Dados
+  dataPathRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    padding:       theme.spacing.md,
+    gap:           14,
+    minHeight:     64,
+  },
+  dataPathText: {
+    fontFamily: theme.font.sans,
+    fontSize:   11,
+    color:      theme.colors.inkMid,
+    lineHeight: 16,
+    marginTop:  2,
+  },
+  btnOpenFolder: {
+    width:           32,
+    height:          32,
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: theme.colors.bgPanel,
+    borderRadius:    theme.radius.sm,
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+  },
+  dataActions: {
+    flexDirection:     'row',
+    gap:               10,
+    padding:           theme.spacing.md,
+    paddingTop:        12,
+  },
+  btnDataAction: {
+    flex:              1,
+    alignItems:        'center',
+    justifyContent:    'center',
+    paddingVertical:   11,
+    backgroundColor:   theme.colors.ink,
+    borderRadius:      theme.radius.sm,
+    minHeight:         42,
+  },
+  btnDataActionText: {
+    fontFamily: theme.font.sansMedium,
+    fontSize:   13,
+    color:      theme.colors.white,
+  },
+  btnDataActionSecondary: {
+    backgroundColor: theme.colors.bgPanel,
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+  },
+  btnDataActionSecondaryText: {
+    fontFamily: theme.font.sansMedium,
+    fontSize:   13,
+    color:      theme.colors.inkMid,
   },
 
   settingRow: {

@@ -2,13 +2,14 @@
 import { useState, useCallback } from 'react'
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, RefreshControl, Alert, ActivityIndicator,
+  TouchableOpacity, RefreshControl, Alert, ActivityIndicator, Platform,
 } from 'react-native'
 import { Image } from 'expo-image'
 import { useFocusEffect, router } from 'expo-router'
 import { theme } from '@/constants/theme'
 import { getAllProjects, deleteProject, Project } from '@/services/db/projects'
 import { shareProjectPdf } from '@/services/pdfService'
+import { showAlert, showConfirm } from '@/components/Dialog'
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg'
 
 // ── Ícones ─────────────────────────────────────────────
@@ -84,79 +85,77 @@ function ProjectCard({
     .toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={onPress}
-      activeOpacity={0.85}
-    >
-      {/* Capa */}
-      <View style={styles.cardCover}>
-        {project.cover_uri ? (
-          <Image
-            source={{ uri: project.cover_uri }}
-            style={styles.cardCoverImage}
-            contentFit="cover"
-          />
-        ) : (
-          <View style={styles.cardCoverPlaceholder}>
-            <IconFolder />
-          </View>
-        )}
-        <View style={styles.cardCoverOverlay} />
-      </View>
-
-      {/* Conteúdo */}
-      <View style={styles.cardBody}>
-        <View style={styles.cardTop}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {project.name}
-            </Text>
-            <Text style={styles.cardClient} numberOfLines={1}>
-              {project.client}
-            </Text>
-          </View>
-          {project.type && (
-            <View style={styles.cardBadge}>
-              <Text style={styles.cardBadgeText}>{project.type}</Text>
+    <View style={styles.card}>
+      {/* Área clicável principal (capa + info) */}
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.cardPressable}>
+        {/* Capa */}
+        <View style={styles.cardCover}>
+          {project.cover_uri ? (
+            <Image
+              source={{ uri: project.cover_uri }}
+              style={styles.cardCoverImage}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={styles.cardCoverPlaceholder}>
+              <IconFolder />
             </View>
           )}
+          <View style={styles.cardCoverOverlay} />
         </View>
 
-        <Text style={styles.cardDate}>{formattedDate}</Text>
-
-        {/* Ações */}
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.cardActionBtn}
-            onPress={onEdit}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <IconEdit />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.cardActionBtn}
-            onPress={onDelete}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <IconTrash />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.cardActionBtn, styles.cardActionDownload]}
-            onPress={onDownload}
-            disabled={downloading}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            {downloading
-              ? <ActivityIndicator size="small" color={theme.colors.white} />
-              : <IconDownload color={theme.colors.white} />
-            }
-          </TouchableOpacity>
+        {/* Conteúdo */}
+        <View style={styles.cardBody}>
+          <View style={styles.cardTop}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {project.name}
+              </Text>
+              <Text style={styles.cardClient} numberOfLines={1}>
+                {project.client}
+              </Text>
+            </View>
+            {project.type && (
+              <View style={styles.cardBadge}>
+                <Text style={styles.cardBadgeText}>{project.type}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.cardDate}>{formattedDate}</Text>
         </View>
+      </TouchableOpacity>
+
+      {/* Ações — fora do TouchableOpacity do card para evitar conflito de eventos */}
+      <View style={styles.cardActions}>
+        <TouchableOpacity
+          style={styles.cardActionBtn}
+          onPress={onEdit}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <IconEdit />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.cardActionBtn}
+          onPress={onDelete}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <IconTrash />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.cardActionBtn, styles.cardActionDownload]}
+          onPress={onDownload}
+          disabled={downloading}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          {downloading
+            ? <ActivityIndicator size="small" color={theme.colors.white} />
+            : <IconDownload color={theme.colors.white} />
+          }
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   )
 }
 
@@ -190,26 +189,19 @@ export default function HomeScreen() {
     loadProjects()
   }
 
-  const handleDelete = (project: Project) => {
-    Alert.alert(
-      'Excluir projeto',
+  const handleDelete = async (project: Project) => {
+    const ok = await showConfirm(
       `Tem certeza que deseja excluir "${project.name}"? Esta ação não pode ser desfeita.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteProject(project.id)
-              setProjects(prev => prev.filter(p => p.id !== project.id))
-            } catch {
-              Alert.alert('Erro', 'Não foi possível excluir o projeto.')
-            }
-          },
-        },
-      ]
+      'Excluir projeto',
+      { confirmText: 'Excluir', danger: true },
     )
+    if (!ok) return
+    try {
+      await deleteProject(project.id)
+      setProjects(prev => prev.filter(p => p.id !== project.id))
+    } catch {
+      await showAlert('Não foi possível excluir o projeto.', 'Erro')
+    }
   }
 
   const handleDownload = async (project: Project) => {
@@ -217,7 +209,8 @@ export default function HomeScreen() {
     try {
       await shareProjectPdf(project.id)
     } catch (e: any) {
-      Alert.alert('Erro ao gerar PDF', e?.message ?? 'Tente novamente.')
+      const msg = e?.message ?? 'Tente novamente.'
+      await showAlert(msg, 'Erro ao gerar PDF')
     } finally {
       setDownloadingId(null)
     }
@@ -279,17 +272,19 @@ export default function HomeScreen() {
             </Text>
           </View>
         ) : (
-          projects.map(project => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onPress={() => router.push(`/project/${project.id}`)}
-              onEdit={() => handleEdit(project)}
-              onDelete={() => handleDelete(project)}
-              onDownload={() => handleDownload(project)}
-              downloading={downloadingId === project.id}
-            />
-          ))
+          <View style={styles.grid}>
+            {projects.map(project => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onPress={() => router.push(`/project/${project.id}`)}
+                onEdit={() => handleEdit(project)}
+                onDelete={() => handleDelete(project)}
+                onDownload={() => handleDownload(project)}
+                downloading={downloadingId === project.id}
+              />
+            ))}
+          </View>
         )}
       </ScrollView>
 
@@ -307,33 +302,40 @@ const styles = StyleSheet.create({
     alignItems:       'center',
     justifyContent:   'space-between',
     paddingHorizontal: theme.spacing.lg,
-    paddingTop:        56,
-    paddingBottom:     16,
+    paddingTop:        40,
+    paddingBottom:     20,
     backgroundColor:   theme.colors.bg,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
   logo: {
-    height: 36,
-    width:  180,
+    flex:     1,
+    maxWidth: 480,
+    height:   80,
   },
   btnNew: {
     flexDirection:  'row',
     alignItems:     'center',
-    gap:            6,
+    gap:            8,
     backgroundColor: theme.colors.ink,
-    paddingHorizontal: 16,
-    paddingVertical:    10,
+    paddingHorizontal: 24,
+    paddingVertical:   14,
     borderRadius:   theme.radius.sm,
   },
   btnNewText: {
     fontFamily: theme.font.sansMedium,
-    fontSize:   13,
+    fontSize:   15,
     color:      theme.colors.white,
   },
 
-  list:      { padding: theme.spacing.lg, gap: 16 },
+  list:      { padding: theme.spacing.lg },
   listEmpty: { flex: 1 },
+  grid: {
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           16,
+    alignItems:    'flex-start',
+  },
 
   // Empty state
   emptyState: {
@@ -355,12 +357,14 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
+    width:           '48%',
     backgroundColor: theme.colors.white,
     borderRadius:    theme.radius.md,
     overflow:        'hidden',
     borderWidth:     1,
     borderColor:     theme.colors.border,
   },
+  cardPressable: {},
   cardCover: {
     height:   160,
     position: 'relative',
@@ -426,11 +430,12 @@ const styles = StyleSheet.create({
 
   // Ações do card
   cardActions: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    gap:            8,
-    marginTop:      4,
-    justifyContent: 'flex-end',
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              8,
+    justifyContent:   'flex-end',
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom:     theme.spacing.md,
   },
   cardActionBtn: {
     width:           40,

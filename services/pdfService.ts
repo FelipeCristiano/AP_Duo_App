@@ -79,15 +79,6 @@ export async function generateProjectPdf(
     total,
     office,
   })
-  let uri: string
-  if (Platform.OS === 'web') {
-    const w = window as any
-    if (!w.electron?.printToPDF) throw new Error('Geração de PDF não disponível neste ambiente')
-    uri = await w.electron.printToPDF(html)
-  } else {
-    const result = await Print.printToFileAsync({ html, base64: false })
-    uri = result.uri
-  }
   const safeName = project.name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -97,7 +88,18 @@ export async function generateProjectPdf(
   const date = new Date()
     .toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     .replace(/\//g, '-')
-  return { uri, fileName: `APduo_${safeName}_${date}.pdf` }
+  const fileName = `APduo_${safeName}_${date}.pdf`
+
+  let uri: string
+  if (Platform.OS === 'web') {
+    const w = window as any
+    if (!w.electron?.printToPDF) throw new Error('Geração de PDF não disponível neste ambiente')
+    uri = await w.electron.printToPDF(html, fileName)
+  } else {
+    const result = await Print.printToFileAsync({ html, base64: false })
+    uri = result.uri
+  }
+  return { uri, fileName }
 }
 
 export async function shareProjectPdf(projectId: number): Promise<void> {

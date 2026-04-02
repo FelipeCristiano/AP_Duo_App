@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, protocol, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, session, protocol, ipcMain, shell, Menu, dialog } = require('electron')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
@@ -74,9 +74,101 @@ function setSecurityHeaders() {
   })
 }
 
-ipcMain.handle('print-to-pdf', async (_event, html) => {
+// ── Settings & Data file management ──────────────────
+const SETTINGS_PATH = path.join(app.getPath('userData'), 'apduo_settings.json')
+
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')) }
+  catch { return {} }
+}
+
+function writeSettings(s) {
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2), 'utf-8')
+}
+
+function getDataFilePath() {
+  const s = readSettings()
+  const dir = s.dataPath || app.getPath('userData')
+  return path.join(dir, 'apduo_data.json')
+}
+
+ipcMain.handle('get-data-path', () => getDataFilePath())
+
+ipcMain.handle('read-data', () => {
+  const p = getDataFilePath()
+  try { return JSON.parse(fs.readFileSync(p, 'utf-8')) }
+  catch { return null }
+})
+
+ipcMain.handle('write-data', (_e, data) => {
+  const p = getDataFilePath()
+  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8')
+})
+
+ipcMain.handle('pick-data-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Escolher pasta de dados',
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  return result.canceled ? null : (result.filePaths[0] ?? null)
+})
+
+ipcMain.handle('set-data-path', (_e, folderPath) => {
+  const oldFile = getDataFilePath()
+  const s = readSettings()
+  if (folderPath === null) delete s.dataPath
+  else s.dataPath = folderPath
+  writeSettings(s)
+  // Copy existing data file to new location
+  const newFile = getDataFilePath()
+  if (oldFile !== newFile && fs.existsSync(oldFile)) {
+    try { fs.copyFileSync(oldFile, newFile) } catch (e) {
+      console.error('Falha ao copiar dados:', e)
+    }
+  }
+})
+
+ipcMain.handle('open-data-folder', () => {
+  const p = getDataFilePath()
+  if (fs.existsSync(p)) {
+    shell.showItemInFolder(p)
+  } else {
+    shell.openPath(path.dirname(p))
+  }
+})
+
+// ── IPC existentes ────────────────────────────────────
+function getPdfDir() {
+  const s = readSettings()
+  return s.pdfPath || app.getPath('documents')
+}
+
+ipcMain.handle('get-pdf-path', () => getPdfDir())
+
+ipcMain.handle('set-pdf-path', (_e, folderPath) => {
+  const s = readSettings()
+  if (folderPath === null) delete s.pdfPath
+  else s.pdfPath = folderPath
+  writeSettings(s)
+})
+
+ipcMain.handle('pick-pdf-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Escolher pasta para PDFs',
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  return result.canceled ? null : (result.filePaths[0] ?? null)
+})
+
+ipcMain.handle('print-to-pdf', async (_event, html, fileName) => {
   const tmpHtml = path.join(os.tmpdir(), `apduo_print_${Date.now()}.html`)
-  const tmpPdf  = path.join(os.tmpdir(), `APduo_${Date.now()}.pdf`)
+
+  // Salva na pasta configurada com o nome definitivo
+  const pdfDir = getPdfDir()
+  if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true })
+  const outFile = fileName
+    ? path.join(pdfDir, fileName)
+    : path.join(pdfDir, `APduo_${Date.now()}.pdf`)
 
   fs.writeFileSync(tmpHtml, html, 'utf-8')
 
@@ -96,14 +188,20 @@ ipcMain.handle('print-to-pdf', async (_event, html) => {
 
   win.close()
   fs.unlinkSync(tmpHtml)
-  fs.writeFileSync(tmpPdf, pdfData)
+  fs.writeFileSync(outFile, pdfData)
 
-  return tmpPdf
+  return outFile
 })
 
 ipcMain.handle('open-file', async (_event, filePath) => {
   await shell.openPath(filePath)
 })
+
+ipcMain.handle('clear-cache', async () => {
+  await session.defaultSession.clearCache()
+})
+
+ipcMain.handle('get-temp-dir', () => os.tmpdir())
 
 async function createWindow() {
   const isDev = !app.isPackaged
@@ -134,6 +232,12 @@ async function createWindow() {
     resizable: true,
     title: 'APduo',
     icon: path.join(__dirname, 'icon.ico'),
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color:       '#F5F2ED',  // bg do app
+      symbolColor: '#1A1A1A',  // ink do app
+      height: 40,
+    },
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -147,6 +251,7 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

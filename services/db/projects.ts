@@ -1,4 +1,5 @@
 import { getDb, isWeb } from './database'
+import { readStore, writeStore } from './fileStore'
 
 export type ProjectStatus = 'draft' | 'active' | 'sent' | 'done'
 
@@ -18,15 +19,14 @@ export interface Project {
   updated_at:   string
 }
 
-// ── Web storage helpers ────────────────────────────────
-function webGetProjects(): Project[] {
-  try {
-    return JSON.parse(localStorage.getItem('apduo_projects') || '[]')
-  } catch { return [] }
+// ── Web/Electron storage helpers ───────────────────────
+async function webGetProjects(): Promise<Project[]> {
+  return (await readStore()).projects as Project[]
 }
 
-function webSaveProjects(projects: Project[]) {
-  localStorage.setItem('apduo_projects', JSON.stringify(projects))
+async function webSaveProjects(projects: Project[]): Promise<void> {
+  const store = await readStore()
+  await writeStore({ ...store, projects })
 }
 
 function webNextId(items: { id: number }[]): number {
@@ -35,7 +35,7 @@ function webNextId(items: { id: number }[]): number {
 
 // ── CRUD ──────────────────────────────────────────────
 export async function getAllProjects(): Promise<Project[]> {
-  if (isWeb) return webGetProjects().sort(
+  if (isWeb) return (await webGetProjects()).sort(
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   )
   return await getDb().getAllAsync<Project>(
@@ -44,7 +44,7 @@ export async function getAllProjects(): Promise<Project[]> {
 }
 
 export async function getProjectById(id: number): Promise<Project | null> {
-  if (isWeb) return webGetProjects().find(p => p.id === id) ?? null
+  if (isWeb) return (await webGetProjects()).find(p => p.id === id) ?? null
   return await getDb().getFirstAsync<Project>(
     `SELECT * FROM projects WHERE id = ?`, [id]
   )
@@ -54,11 +54,11 @@ export async function createProject(
   data: Omit<Project, 'id' | 'created_at' | 'updated_at'>
 ): Promise<number> {
   if (isWeb) {
-    const projects = webGetProjects()
+    const projects = await webGetProjects()
     const id = webNextId(projects)
     const now = new Date().toISOString()
     projects.push({ ...data, id, created_at: now, updated_at: now })
-    webSaveProjects(projects)
+    await webSaveProjects(projects)
     return id
   }
   const result = await getDb().runAsync(
@@ -86,7 +86,7 @@ export async function updateProject(
   data: Partial<Project>
 ): Promise<void> {
   if (isWeb) {
-    const projects = webGetProjects()
+    const projects = await webGetProjects()
     const idx = projects.findIndex(p => p.id === id)
     if (idx === -1) return
     projects[idx] = {
@@ -94,7 +94,7 @@ export async function updateProject(
       ...data,
       updated_at: new Date().toISOString(),
     }
-    webSaveProjects(projects)
+    await webSaveProjects(projects)
     return
   }
   await getDb().runAsync(
@@ -129,7 +129,8 @@ export async function updateProject(
 
 export async function deleteProject(id: number): Promise<void> {
   if (isWeb) {
-    webSaveProjects(webGetProjects().filter(p => p.id !== id))
+    const projects = await webGetProjects()
+    await webSaveProjects(projects.filter(p => p.id !== id))
     return
   }
   await getDb().runAsync(`DELETE FROM projects WHERE id = ?`, [id])
@@ -139,10 +140,9 @@ export async function getProjectStats(
   id: number
 ): Promise<{ categories: number; products: number }> {
   if (isWeb) {
-    const cats = JSON.parse(localStorage.getItem('apduo_categories') || '[]')
-      .filter((c: any) => c.project_id === id)
-    const prods = JSON.parse(localStorage.getItem('apduo_products') || '[]')
-      .filter((p: any) => cats.some((c: any) => c.id === p.category_id))
+    const store = await readStore()
+    const cats  = store.categories.filter((c: any) => c.project_id === id)
+    const prods = store.products.filter((p: any) => cats.some((c: any) => c.id === p.category_id))
     return { categories: cats.length, products: prods.length }
   }
   const cats = await getDb().getFirstAsync<{ count: number }>(
@@ -161,10 +161,9 @@ export async function getProjectStats(
 
 export async function getProjectTotal(projectId: number): Promise<number> {
   if (isWeb) {
-    const cats = JSON.parse(localStorage.getItem('apduo_categories') || '[]')
-      .filter((c: any) => c.project_id === projectId)
-    const prods = JSON.parse(localStorage.getItem('apduo_products') || '[]')
-      .filter((p: any) => cats.some((c: any) => c.id === p.category_id))
+    const store = await readStore()
+    const cats  = store.categories.filter((c: any) => c.project_id === projectId)
+    const prods = store.products.filter((p: any) => cats.some((c: any) => c.id === p.category_id))
     return prods.reduce((acc: number, p: any) => acc + p.price * p.quantity, 0)
   }
   const result = await getDb().getFirstAsync<{ total: number }>(

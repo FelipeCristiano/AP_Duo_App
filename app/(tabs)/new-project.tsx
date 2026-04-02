@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, TextInput, Alert,
+  TouchableOpacity, TextInput,
   KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { router } from 'expo-router'
@@ -10,6 +10,7 @@ import { Image } from 'expo-image'
 import { theme } from '@/constants/theme'
 import { useProjectStore } from '@/stores/projectStore'
 import { createCategory } from '@/services/db/products'
+import { showAlert } from '@/components/Dialog'
 import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg'
 
 // ── Ícones ─────────────────────────────────────────────
@@ -181,7 +182,7 @@ export default function NewProjectScreen() {
   const pickImage = useCallback(async (setter: (uri: string) => void) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (status !== 'granted') {
-      Alert.alert('Permissão necessária', 'Permita o acesso à galeria nas configurações.')
+      await showAlert('Permita o acesso à galeria nas configurações.', 'Permissão necessária')
       return
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -247,7 +248,7 @@ export default function NewProjectScreen() {
 
       router.replace(`/project/${projectId}`)
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível salvar o projeto.')
+      await showAlert('Não foi possível salvar o projeto.', 'Erro')
       console.error(e)
     } finally {
       setSaving(false)
@@ -416,7 +417,7 @@ export default function NewProjectScreen() {
 
             <View style={styles.infoBox}>
               <Text style={styles.infoBoxText}>
-                💡 Você pode pular esta etapa e adicionar as imagens depois nas configurações do projeto.
+                Você pode pular esta etapa e adicionar as imagens depois nas configurações do projeto.
               </Text>
             </View>
           </View>
@@ -492,7 +493,7 @@ export default function NewProjectScreen() {
             {rooms.length === 0 && (
               <View style={styles.infoBox}>
                 <Text style={styles.infoBoxText}>
-                  ⚠️ Adicione ao menos um cômodo para continuar.
+                  Adicione ao menos um cômodo para continuar.
                 </Text>
               </View>
             )}

@@ -1,4 +1,5 @@
 import { getDb, isWeb } from './database'
+import { readStore, writeStore } from './fileStore'
 
 export interface Category {
   id:         number
@@ -37,25 +38,23 @@ export function stringifyVariations(v: ProductVariation[]): string {
   return JSON.stringify(v)
 }
 
-// ── Web storage helpers ────────────────────────────────
-function webGetCategories(): Category[] {
-  try {
-    return JSON.parse(localStorage.getItem('apduo_categories') || '[]')
-  } catch { return [] }
+// ── Web/Electron storage helpers ───────────────────────
+async function webGetCategories(): Promise<Category[]> {
+  return (await readStore()).categories as Category[]
 }
 
-function webSaveCategories(cats: Category[]) {
-  localStorage.setItem('apduo_categories', JSON.stringify(cats))
+async function webSaveCategories(cats: Category[]): Promise<void> {
+  const store = await readStore()
+  await writeStore({ ...store, categories: cats })
 }
 
-function webGetProducts(): Product[] {
-  try {
-    return JSON.parse(localStorage.getItem('apduo_products') || '[]')
-  } catch { return [] }
+async function webGetProducts(): Promise<Product[]> {
+  return (await readStore()).products as Product[]
 }
 
-function webSaveProducts(prods: Product[]) {
-  localStorage.setItem('apduo_products', JSON.stringify(prods))
+async function webSaveProducts(prods: Product[]): Promise<void> {
+  const store = await readStore()
+  await writeStore({ ...store, products: prods })
 }
 
 function webNextId(items: { id: number }[]): number {
@@ -66,7 +65,7 @@ function webNextId(items: { id: number }[]): number {
 export async function getCategoriesByProject(
   projectId: number
 ): Promise<Category[]> {
-  if (isWeb) return webGetCategories()
+  if (isWeb) return (await webGetCategories())
     .filter(c => c.project_id === projectId)
     .sort((a, b) => a.order_idx - b.order_idx)
   return await getDb().getAllAsync<Category>(
@@ -81,10 +80,10 @@ export async function createCategory(
   order: number
 ): Promise<number> {
   if (isWeb) {
-    const cats = webGetCategories()
+    const cats = await webGetCategories()
     const id = webNextId(cats)
     cats.push({ id, project_id: projectId, name, order_idx: order })
-    webSaveCategories(cats)
+    await webSaveCategories(cats)
     return id
   }
   const result = await getDb().runAsync(
@@ -99,9 +98,9 @@ export async function updateCategory(
   name: string
 ): Promise<void> {
   if (isWeb) {
-    const cats = webGetCategories()
+    const cats = await webGetCategories()
     const idx = cats.findIndex(c => c.id === id)
-    if (idx !== -1) { cats[idx].name = name; webSaveCategories(cats) }
+    if (idx !== -1) { cats[idx].name = name; await webSaveCategories(cats) }
     return
   }
   await getDb().runAsync(
@@ -111,8 +110,8 @@ export async function updateCategory(
 
 export async function deleteCategory(id: number): Promise<void> {
   if (isWeb) {
-    webSaveCategories(webGetCategories().filter(c => c.id !== id))
-    webSaveProducts(webGetProducts().filter(p => p.category_id !== id))
+    await webSaveCategories((await webGetCategories()).filter(c => c.id !== id))
+    await webSaveProducts((await webGetProducts()).filter(p => p.category_id !== id))
     return
   }
   await getDb().runAsync(`DELETE FROM categories WHERE id = ?`, [id])
@@ -120,12 +119,12 @@ export async function deleteCategory(id: number): Promise<void> {
 
 export async function reorderCategories(ids: number[]): Promise<void> {
   if (isWeb) {
-    const cats = webGetCategories()
+    const cats = await webGetCategories()
     ids.forEach((id, idx) => {
       const cat = cats.find(c => c.id === id)
       if (cat) cat.order_idx = idx
     })
-    webSaveCategories(cats)
+    await webSaveCategories(cats)
     return
   }
   await Promise.all(
@@ -141,7 +140,7 @@ export async function reorderCategories(ids: number[]): Promise<void> {
 export async function getProductsByCategory(
   categoryId: number
 ): Promise<Product[]> {
-  if (isWeb) return webGetProducts()
+  if (isWeb) return (await webGetProducts())
     .filter(p => p.category_id === categoryId)
     .sort((a, b) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -156,8 +155,8 @@ export async function getProductsByProject(
   projectId: number
 ): Promise<Product[]> {
   if (isWeb) {
-    const cats = webGetCategories().filter(c => c.project_id === projectId)
-    return webGetProducts()
+    const cats = (await webGetCategories()).filter(c => c.project_id === projectId)
+    return (await webGetProducts())
       .filter(p => cats.some(c => c.id === p.category_id))
   }
   return await getDb().getAllAsync<Product>(
@@ -173,10 +172,10 @@ export async function createProduct(
   data: Omit<Product, 'id' | 'created_at'>
 ): Promise<number> {
   if (isWeb) {
-    const prods = webGetProducts()
+    const prods = await webGetProducts()
     const id = webNextId(prods)
     prods.push({ ...data, id, created_at: new Date().toISOString() })
-    webSaveProducts(prods)
+    await webSaveProducts(prods)
     return id
   }
   const result = await getDb().runAsync(
@@ -205,11 +204,11 @@ export async function updateProduct(
   data: Partial<Product>
 ): Promise<void> {
   if (isWeb) {
-    const prods = webGetProducts()
+    const prods = await webGetProducts()
     const idx = prods.findIndex(p => p.id === id)
     if (idx !== -1) {
       prods[idx] = { ...prods[idx], ...data }
-      webSaveProducts(prods)
+      await webSaveProducts(prods)
     }
     return
   }
@@ -242,7 +241,7 @@ export async function updateProduct(
 
 export async function deleteProduct(id: number): Promise<void> {
   if (isWeb) {
-    webSaveProducts(webGetProducts().filter(p => p.id !== id))
+    await webSaveProducts((await webGetProducts()).filter(p => p.id !== id))
     return
   }
   await getDb().runAsync(`DELETE FROM products WHERE id = ?`, [id])
@@ -250,7 +249,7 @@ export async function deleteProduct(id: number): Promise<void> {
 
 export async function getCategoryTotal(categoryId: number): Promise<number> {
   if (isWeb) {
-    return webGetProducts()
+    return (await webGetProducts())
       .filter(p => p.category_id === categoryId)
       .reduce((acc, p) => acc + p.price * p.quantity, 0)
   }

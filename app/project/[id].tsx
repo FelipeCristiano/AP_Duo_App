@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useFocusEffect } from 'expo-router'
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, Alert, ActivityIndicator,
+  TouchableOpacity, Alert, ActivityIndicator, Platform,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { Image } from 'expo-image'
@@ -12,6 +12,7 @@ import {
   getCategoriesByProject, getProductsByCategory,
   deleteProduct, Category, Product, parseVariations,
 } from '@/services/db/products'
+import { showConfirm } from '@/components/Dialog'
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg'
 
 // ── Ícones ─────────────────────────────────────────────
@@ -72,35 +73,8 @@ function IconLink() {
   )
 }
 
-// ── Cabeçalho da tabela ────────────────────────────────
-function TableHeader() {
-  return (
-    <View style={styles.tableHeader}>
-      <View style={styles.colImage}>
-        <Text style={styles.thText}>Imagem</Text>
-      </View>
-      <View style={styles.colName}>
-        <Text style={styles.thText}>Produto</Text>
-      </View>
-      <View style={styles.colDesc}>
-        <Text style={styles.thText}>Descrição</Text>
-      </View>
-      <View style={styles.colQty}>
-        <Text style={styles.thText}>Qtd</Text>
-      </View>
-      <View style={styles.colPrice}>
-        <Text style={styles.thText}>Vl. Unit</Text>
-      </View>
-      <View style={styles.colTotal}>
-        <Text style={styles.thText}>Vl. Total</Text>
-      </View>
-      <View style={styles.colActions} />
-    </View>
-  )
-}
-
-// ── Linha de produto ───────────────────────────────────
-function ProductRow({
+// ── Card de produto (grid 2 colunas) ──────────────────
+function ProductCard({
   product, onEdit, onDelete,
 }: {
   product:  Product
@@ -114,81 +88,64 @@ function ProductRow({
     .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
   return (
-    <View style={styles.productRow}>
+    <View style={styles.productCard}>
 
       {/* Imagem */}
-      <View style={styles.colImage}>
-        {product.image_uri ? (
-          <Image
-            source={{ uri: product.image_uri }}
-            style={styles.productThumb}
-            contentFit="cover"
-          />
-        ) : (
-          <View style={styles.productThumbEmpty}>
-            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"
-              stroke={theme.colors.inkXLight} strokeWidth={1.5}>
-              <Rect x={3} y={3} width={18} height={18} rx={2} />
-              <Circle cx={8.5} cy={8.5} r={1.5} />
-              <Polyline points="21 15 16 10 5 21" />
-            </Svg>
-          </View>
-        )}
-      </View>
+      {product.image_uri ? (
+        <Image
+          source={{ uri: product.image_uri }}
+          style={styles.productImg}
+          contentFit="cover"
+        />
+      ) : (
+        <View style={styles.productImgEmpty}>
+          <Svg width={28} height={28} viewBox="0 0 24 24" fill="none"
+            stroke={theme.colors.inkXLight} strokeWidth={1.2}>
+            <Rect x={3} y={3} width={18} height={18} rx={2} />
+            <Circle cx={8.5} cy={8.5} r={1.5} />
+            <Polyline points="21 15 16 10 5 21" />
+          </Svg>
+        </View>
+      )}
 
-      {/* Nome + loja */}
-      <View style={styles.colName}>
-        <Text style={styles.productName} numberOfLines={2}>
-          {product.name}
-        </Text>
+      {/* Info */}
+      <View style={styles.productCardBody}>
+        <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
         {product.store && (
           <View style={styles.storeRow}>
             <IconLink />
-            <Text style={styles.productStore}>{product.store}</Text>
+            <Text style={styles.productStore} numberOfLines={1}>{product.store}</Text>
           </View>
         )}
-      </View>
-
-      {/* Descrição + variações + notas */}
-      <View style={styles.colDesc}>
-        {product.description
-          ? <Text style={styles.productDesc} numberOfLines={3}>
-              {product.description}
-            </Text>
-          : null}
+        {product.description ? (
+          <Text style={styles.productDesc} numberOfLines={2}>{product.description}</Text>
+        ) : null}
         {variations.map((v, i) => (
-          <Text key={i} style={styles.productVariation}>
-            {v.label}: {v.value}
-          </Text>
+          <Text key={i} style={styles.productVariation}>{v.label}: {v.value}</Text>
         ))}
-        {product.notes
-          ? <Text style={styles.productNotes}>{product.notes}</Text>
-          : null}
+        {product.notes ? (
+          <Text style={styles.productNotes} numberOfLines={1}>{product.notes}</Text>
+        ) : null}
       </View>
 
-      {/* Qtd */}
-      <View style={styles.colQty}>
-        <Text style={styles.productQty}>{product.quantity}</Text>
-      </View>
-
-      {/* Vl. Unit */}
-      <View style={styles.colPrice}>
-        <Text style={styles.productPrice}>{unit}</Text>
-      </View>
-
-      {/* Vl. Total */}
-      <View style={styles.colTotal}>
-        <Text style={styles.productTotal}>{total}</Text>
-      </View>
-
-      {/* Ações */}
-      <View style={styles.colActions}>
-        <TouchableOpacity style={styles.rowAction} onPress={onEdit}>
-          <IconEdit />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.rowAction} onPress={onDelete}>
-          <IconTrash />
-        </TouchableOpacity>
+      {/* Preços + ações */}
+      <View style={styles.productCardFooter}>
+        <View style={styles.productPriceRow}>
+          <Text style={styles.productQtyLabel}>Qtd {product.quantity}</Text>
+          <Text style={styles.productPrice}>{unit}</Text>
+        </View>
+        <View style={styles.productTotalRow}>
+          <Text style={styles.productTotalLabel}>Total</Text>
+          <Text style={styles.productTotal}>{total}</Text>
+        </View>
+        <View style={styles.productActions}>
+          <TouchableOpacity style={styles.rowAction} onPress={onEdit}>
+            <IconEdit />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.rowAction} onPress={onDelete}>
+            <IconTrash />
+          </TouchableOpacity>
+        </View>
       </View>
 
     </View>
@@ -221,12 +178,11 @@ function RoomBlock({
         </TouchableOpacity>
       </View>
 
-      {/* Tabela */}
+      {/* Grid de produtos */}
       {products.length > 0 ? (
-        <View style={styles.table}>
-          <TableHeader />
+        <View style={styles.productGrid}>
           {products.map(product => (
-            <ProductRow
+            <ProductCard
               key={product.id}
               product={product}
               onEdit={() => onEditProduct(product)}
@@ -234,9 +190,7 @@ function RoomBlock({
             />
           ))}
           <View style={styles.subtotalRow}>
-            <Text style={styles.subtotalLabel}>
-              Subtotal — {category.name}
-            </Text>
+            <Text style={styles.subtotalLabel}>Subtotal — {category.name}</Text>
             <Text style={styles.subtotalValue}>{subtotal}</Text>
           </View>
         </View>
@@ -298,21 +252,15 @@ export default function ProjectScreen() {
   }, [loadProject])
 )
 
-  const handleDeleteProduct = useCallback((productId: number) => {
-    Alert.alert(
-      'Remover produto',
+  const handleDeleteProduct = useCallback(async (productId: number) => {
+    const ok = await showConfirm(
       'Deseja remover este produto?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Remover', style: 'destructive',
-          onPress: async () => {
-            await deleteProduct(productId)
-            loadProject()
-          },
-        },
-      ]
+      'Remover produto',
+      { confirmText: 'Remover', danger: true },
     )
+    if (!ok) return
+    await deleteProduct(productId)
+    loadProject()
   }, [loadProject])
 
   if (loading) {
@@ -340,7 +288,7 @@ export default function ProjectScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}>
           <IconBack />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -378,38 +326,37 @@ export default function ProjectScreen() {
         </View>
       </View>
 
-      {/* ── Tabelas por cômodo ── */}
+      {/* ── Cômodos e produtos ── */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator>
-          <View style={styles.tableContainer}>
+        <View style={styles.roomsContainer}>
 
-            {rooms.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>Nenhum cômodo cadastrado</Text>
-                <Text style={styles.emptySub}>
-                  Edite o projeto para adicionar cômodos.
-                </Text>
-              </View>
-            ) : (
-              rooms.map(({ category, products }) => (
-                <RoomBlock
-                  key={category.id}
-                  category={category}
-                  products={products}
-                  onAddProduct={() => router.push(
-                    `/project/add-product?projectId=${projectId}&categoryId=${category.id}`
-                  )}
-                  onEditProduct={(p) => router.push(
-                    `/project/add-product?projectId=${projectId}&categoryId=${p.category_id}&productId=${p.id}`
-                  )}
-                  onDeleteProduct={handleDeleteProduct}
-                />
-              ))
-            )}
+          {rooms.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Nenhum cômodo cadastrado</Text>
+              <Text style={styles.emptySub}>
+                Edite o projeto para adicionar cômodos.
+              </Text>
+            </View>
+          ) : (
+            rooms.map(({ category, products }) => (
+              <RoomBlock
+                key={category.id}
+                category={category}
+                products={products}
+                onAddProduct={() => router.push(
+                  `/project/add-product?projectId=${projectId}&categoryId=${category.id}`
+                )}
+                onEditProduct={(p) => router.push(
+                  `/project/add-product?projectId=${projectId}&categoryId=${p.category_id}&productId=${p.id}`
+                )}
+                onDeleteProduct={handleDeleteProduct}
+              />
+            ))
+          )}
 
             {/* Total geral */}
             {rooms.length > 0 && (
@@ -421,24 +368,13 @@ export default function ProjectScreen() {
               </View>
             )}
 
-          </View>
-        </ScrollView>
+        </View>
       </ScrollView>
 
     </View>
   )
 }
 
-// ── Larguras das colunas ───────────────────────────────
-const COL = {
-  image:   80,
-  name:    160,
-  desc:    200,
-  qty:     50,
-  price:   100,
-  total:   110,
-  actions: 70,
-}
 
 const styles = StyleSheet.create({
   container:  { flex: 1, backgroundColor: theme.colors.bg },
@@ -496,18 +432,16 @@ const styles = StyleSheet.create({
   },
 
   // Scroll
-  scroll:         { flex: 1 },
-  scrollContent:  { paddingBottom: 48 },
-  tableContainer: { padding: theme.spacing.lg, gap: 28 },
+  scroll:          { flex: 1 },
+  scrollContent:   { paddingBottom: 48 },
+  roomsContainer:  { padding: theme.spacing.lg, gap: 28 },
 
   // Room block
   roomBlock: {
     backgroundColor: theme.colors.white,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1, borderColor: theme.colors.border,
-    overflow: 'hidden',
-    minWidth: COL.image + COL.name + COL.desc + COL.qty +
-              COL.price + COL.total + COL.actions + 24 * 7,
+    borderRadius:    theme.radius.lg,
+    borderWidth:     1, borderColor: theme.colors.border,
+    overflow:        'hidden',
   },
   roomHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -530,70 +464,75 @@ const styles = StyleSheet.create({
     fontFamily: 'DMSans_500Medium', fontSize: 12, color: theme.colors.ink,
   },
 
-  // Table
-  table: {},
-  tableHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 10,
+  // Product grid
+  productGrid: {
+    padding: theme.spacing.md,
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           12,
+    alignItems:    'flex-start',
+  },
+
+  // Product card
+  productCard: {
+    width:           '48%',
     backgroundColor: theme.colors.bgCard,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    borderRadius:    theme.radius.md,
+    borderWidth:     1, borderColor: theme.colors.border,
+    overflow:        'hidden',
   },
-  thText: {
-    fontFamily: 'DMSans_500Medium', fontSize: 10,
-    letterSpacing: 0.8, textTransform: 'uppercase',
-    color: theme.colors.inkLight,
+  productImg: {
+    width: '100%', height: 140,
   },
-
-  // Product row
-  productRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
-  },
-
-  // Colunas
-  colImage:   { width: COL.image,   marginRight: 12 },
-  colName:    { width: COL.name,    marginRight: 12 },
-  colDesc:    { width: COL.desc,    marginRight: 12 },
-  colQty:     { width: COL.qty,     marginRight: 12, alignItems: 'center' },
-  colPrice:   { width: COL.price,   marginRight: 12, alignItems: 'flex-end' },
-  colTotal:   { width: COL.total,   marginRight: 12, alignItems: 'flex-end' },
-  colActions: { width: COL.actions, flexDirection: 'row', gap: 6, justifyContent: 'flex-end' },
-
-  productThumb: {
-    width: 64, height: 64, borderRadius: theme.radius.sm,
-  },
-  productThumbEmpty: {
-    width: 64, height: 64, borderRadius: theme.radius.sm,
+  productImgEmpty: {
+    width: '100%', height: 140,
     backgroundColor: theme.colors.bgPanel,
-    borderWidth: 1, borderColor: theme.colors.border,
     alignItems: 'center', justifyContent: 'center',
+  },
+  productCardBody: {
+    padding: 12, gap: 3,
   },
   productName: {
     fontFamily: 'DMSans_500Medium', fontSize: 13,
-    color: theme.colors.ink, marginBottom: 4,
+    color: theme.colors.ink,
   },
   storeRow:       { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  productStore:   { fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkLight },
-  productDesc:    {
+  productStore:   { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkLight },
+  productDesc: {
     fontFamily: 'DMSans_400Regular', fontSize: 12,
-    color: theme.colors.inkMid, lineHeight: 18, marginBottom: 4,
+    color: theme.colors.inkMid, lineHeight: 17,
   },
   productVariation: {
-    fontFamily: 'DMSans_400Regular', fontSize: 11,
-    color: theme.colors.inkLight, marginBottom: 2,
+    fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkLight,
   },
   productNotes: {
     fontFamily: 'DMSans_400Regular', fontSize: 11,
     color: theme.colors.inkLight, fontStyle: 'italic',
   },
-  productQty:   { fontFamily: 'DMSans_500Medium', fontSize: 14, color: theme.colors.ink },
-  productPrice: { fontFamily: 'DMSans_400Regular', fontSize: 13, color: theme.colors.inkMid },
-  productTotal: { fontFamily: 'CormorantGaramond_400Regular', fontSize: 16, color: theme.colors.ink },
+
+  productCardFooter: {
+    padding: 12, paddingTop: 8,
+    borderTopWidth: 1, borderTopColor: theme.colors.border,
+    gap: 4,
+  },
+  productPriceRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  productTotalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  productQtyLabel: { fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkLight },
+  productPrice:    { fontFamily: 'DMSans_400Regular', fontSize: 12, color: theme.colors.inkMid },
+  productTotalLabel: { fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkLight },
+  productTotal:    { fontFamily: 'CormorantGaramond_400Regular', fontSize: 16, color: theme.colors.ink },
+  productActions: {
+    flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 4,
+  },
 
   rowAction: {
     width: 30, height: 30, borderRadius: 7,
     borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.white,
     alignItems: 'center', justifyContent: 'center',
   },
 

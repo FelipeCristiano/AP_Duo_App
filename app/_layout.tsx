@@ -18,6 +18,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import { initDatabase } from '@/services/db/database'
 import { theme } from '@/constants/theme'
 import { View, Text, StyleSheet } from 'react-native'
+import { DialogProvider } from '@/components/Dialog'
 
 SplashScreen.preventAutoHideAsync()
 
@@ -70,6 +71,7 @@ export default function RootLayout() {
           animation: 'fade',
         }}
       />
+      <DialogProvider />
     </>
   )
 }

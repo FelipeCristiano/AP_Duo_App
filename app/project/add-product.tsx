@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, TextInput, Alert,
+  TouchableOpacity, TextInput,
   KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
@@ -9,11 +9,12 @@ import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
 import { theme } from '@/constants/theme'
 import {
-  createProduct, updateProduct, Product,
-  ProductVariation, stringifyVariations, parseVariations,
+  createProduct, updateProduct,
+  ProductVariation, stringifyVariations,
 } from '@/services/db/products'
 import { scrapeProduct, isValidUrl, ScrapedProduct } from '@/services/scraper'
-import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg'
+import { showAlert } from '@/components/Dialog'
+import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg'
 
 // ── Ícones ─────────────────────────────────────────────
 function IconBack() {
@@ -94,9 +95,8 @@ function Field({ label, required, hint, children }: {
 //  TELA PRINCIPAL
 // ══════════════════════════════════════════════════════
 export default function AddProductScreen() {
-  const { projectId, categoryId, productId } =
+  const { categoryId, productId } =
     useLocalSearchParams<{
-      projectId:  string
       categoryId: string
       productId?: string
     }>()
@@ -124,14 +124,12 @@ export default function AddProductScreen() {
   // ── Carregar produto existente (edição) ────────────
   useEffect(() => {
     if (!isEditing) return
-    // Produto já vem via params numa implementação futura
-    // Por ora os campos ficam vazios para edição
   }, [isEditing])
 
   // ── Scraping ───────────────────────────────────────
   const handleScrape = useCallback(async () => {
     if (!isValidUrl(link.trim())) {
-      Alert.alert('URL inválida', 'Cole um link válido começando com http:// ou https://')
+      await showAlert('Cole um link válido começando com http:// ou https://', 'URL inválida')
       return
     }
 
@@ -142,14 +140,13 @@ export default function AddProductScreen() {
       const result: ScrapedProduct | null = await scrapeProduct(link.trim())
 
       if (!result) {
-        Alert.alert(
-          'Não foi possível extrair',
+        await showAlert(
           'O site pode ter bloqueado a busca automática. Preencha os campos manualmente.',
+          'Não foi possível extrair',
         )
         return
       }
 
-      // Preenche os campos com o que veio do scraping
       setName(result.name ?? '')
       setStore(result.store ?? '')
       setImageUri(result.image_uri ?? null)
@@ -159,7 +156,7 @@ export default function AddProductScreen() {
       }
       setScraped(true)
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível acessar o link. Verifique sua conexão.')
+      await showAlert('Não foi possível acessar o link. Verifique sua conexão.', 'Erro')
     } finally {
       setScraping(false)
     }
@@ -169,7 +166,7 @@ export default function AddProductScreen() {
   const pickImage = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (status !== 'granted') {
-      Alert.alert('Permissão necessária', 'Permita o acesso à galeria.')
+      await showAlert('Permita o acesso à galeria.', 'Permissão necessária')
       return
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -204,7 +201,7 @@ export default function AddProductScreen() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Nome obrigatório', 'Informe o nome do produto.')
+      await showAlert('Informe o nome do produto.', 'Nome obrigatório')
       return
     }
 
@@ -233,7 +230,7 @@ export default function AddProductScreen() {
 
       router.back()
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível salvar o produto.')
+      await showAlert('Não foi possível salvar o produto.', 'Erro')
       console.error(e)
     } finally {
       setSaving(false)
@@ -321,7 +318,6 @@ export default function AddProductScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Dados do produto</Text>
 
-          {/* Imagem */}
           <Field label="Imagem">
             <TouchableOpacity
               style={styles.imageArea}
@@ -389,7 +385,6 @@ export default function AddProductScreen() {
             />
           </Field>
 
-          {/* Preço e quantidade */}
           <View style={styles.rowFields}>
             <View style={{ flex: 1 }}>
               <Field label="Valor unitário (R$)" required>
@@ -419,7 +414,6 @@ export default function AddProductScreen() {
             </View>
           </View>
 
-          {/* Total calculado */}
           {price && quantity && (
             <View style={styles.totalPreview}>
               <Text style={styles.totalPreviewLabel}>Valor total</Text>
@@ -440,7 +434,6 @@ export default function AddProductScreen() {
             Cor, tamanho, tipo de madeira, acabamento etc.
           </Text>
 
-          {/* Lista de variações */}
           {variations.length > 0 && (
             <View style={styles.variationsList}>
               {variations.map((v, i) => (
@@ -458,7 +451,6 @@ export default function AddProductScreen() {
             </View>
           )}
 
-          {/* Adicionar variação */}
           <View style={styles.varInputRow}>
             <TextInput
               style={[styles.input, styles.varInput]}
@@ -568,7 +560,6 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.spacing.lg,
   },
 
-  // Link + scrape
   linkRow:   { flexDirection: 'row', gap: 10, alignItems: 'center' },
   scrapeBtn: {
     width: 48, height: 48,
@@ -589,7 +580,6 @@ const styles = StyleSheet.create({
     color: theme.colors.success, flex: 1,
   },
 
-  // Imagem
   imageArea: {
     height: 180, borderRadius: theme.radius.md,
     borderWidth: 1.5, borderStyle: 'dashed',
@@ -615,7 +605,6 @@ const styles = StyleSheet.create({
     fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkXLight,
   },
 
-  // Campos
   field:         { marginBottom: 18 },
   fieldLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   fieldLabel: {
@@ -638,7 +627,6 @@ const styles = StyleSheet.create({
 
   rowFields: { flexDirection: 'row', gap: 12 },
 
-  // Total preview
   totalPreview: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: theme.colors.bgPanel,
@@ -653,7 +641,6 @@ const styles = StyleSheet.create({
     fontSize: 20, color: theme.colors.ink,
   },
 
-  // Variações
   variationsList: { gap: 8, marginBottom: 14 },
   variationItem: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -675,7 +662,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm, alignItems: 'center', justifyContent: 'center',
   },
 
-  // Footer
   footer: {
     padding: theme.spacing.lg, paddingBottom: 32,
     backgroundColor: theme.colors.bg,

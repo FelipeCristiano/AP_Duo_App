@@ -2,12 +2,13 @@
 import { useState, useEffect } from 'react'
 import {
   View, Text, StyleSheet,
-  TouchableOpacity, ActivityIndicator, Alert,
+  TouchableOpacity, ActivityIndicator,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { theme } from '@/constants/theme'
 import { getProjectById, Project } from '@/services/db/projects'
 import { generateProjectPdf, shareProjectPdf } from '@/services/pdfService'
+import { showAlert } from '@/components/Dialog'
 import Svg, { Path, Line, Polyline, Circle } from 'react-native-svg'
 
 // ── Ícones ─────────────────────────────────────────────
@@ -94,14 +95,8 @@ export default function PdfPreviewScreen() {
       setErrorMsg(null)
       setStage('loading')
 
-      // A geração é assíncrona em duas etapas:
-      // 1. busca dados + converte imagens para base64
-      // 2. expo-print monta o PDF
-      // O pdfService cuida disso internamente, mas separamos
-      // o feedback visual em dois momentos com um pequeno delay
       const result = await new Promise<{ uri: string; fileName: string }>(
         (resolve, reject) => {
-          // Dá um tick para a UI atualizar antes de começar o processamento pesado
           setTimeout(async () => {
             try {
               setStage('generating')
@@ -129,7 +124,7 @@ export default function PdfPreviewScreen() {
     try {
       await shareProjectPdf(id)
     } catch (e: any) {
-      Alert.alert('Erro ao compartilhar', e?.message ?? 'Tente novamente.')
+      await showAlert(e?.message ?? 'Tente novamente.', 'Erro ao compartilhar')
     }
   }
 
@@ -164,7 +159,7 @@ export default function PdfPreviewScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')}>
           <IconBack />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -313,7 +308,6 @@ export default function PdfPreviewScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.bg },
 
-  // Header
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 56, paddingBottom: 16, paddingHorizontal: theme.spacing.lg,
@@ -332,7 +326,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.8,
   },
 
-  // Corpo
   body: {
     flex: 1,
     alignItems: 'center',
@@ -362,7 +355,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
 
-  // Erro
   errorBox: {
     backgroundColor: theme.colors.danger + '15',
     borderWidth: 1, borderColor: theme.colors.danger + '40',
@@ -375,7 +367,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Card do projeto
   projectCard: {
     flexDirection: 'row',
     backgroundColor: theme.colors.white,
@@ -402,7 +393,6 @@ const styles = StyleSheet.create({
     lineHeight: 18, marginTop: 4,
   },
 
-  // Card de sucesso
   successCard: {
     backgroundColor: theme.colors.white,
     borderWidth: 1, borderColor: theme.colors.border,
@@ -420,7 +410,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // Footer
   footer: {
     padding: theme.spacing.lg, paddingBottom: 32,
     backgroundColor: theme.colors.bg,
@@ -445,7 +434,5 @@ const styles = StyleSheet.create({
   btnSecondaryText: {
     fontFamily: 'DMSans_500Medium', fontSize: 15, color: theme.colors.ink,
   },
-  btnDisabled: {
-    opacity: 0.5,
-  },
+  btnDisabled: { opacity: 0.5 },
 })

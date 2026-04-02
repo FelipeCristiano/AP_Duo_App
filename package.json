@@ -59,7 +59,9 @@
     "files": [
       "dist/**/*",
       "icon.ico",
+      "installer-sidebar.bmp",
       "main.js",
+      "preload.js",
       "package.json",
       "!node_modules/**",
       "!site_APduo/**",
@@ -81,7 +83,14 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "APduo"
+      "shortcutName": "APduo",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico",
+      "installerSidebar": "installer-sidebar.bmp",
+      "uninstallerSidebar": "installer-sidebar.bmp",
+      "language": "1046",
+      "artifactName": "APduo-Setup-${version}.exe"
     }
   },
   "private": true
