@@ -19,7 +19,6 @@ export interface Product {
   name:        string
   description: string | null
   variations:  string | null
-  notes:       string | null
   image_uri:   string | null
   link:        string | null
   price:       number
@@ -137,6 +136,13 @@ export async function reorderCategories(ids: number[]): Promise<void> {
 }
 
 // ── PRODUCTS ──────────────────────────────────────────
+export async function getProductById(id: number): Promise<Product | null> {
+  if (isWeb) return (await webGetProducts()).find(p => p.id === id) ?? null
+  return await getDb().getFirstAsync<Product>(
+    `SELECT * FROM products WHERE id = ?`, [id]
+  ) ?? null
+}
+
 export async function getProductsByCategory(
   categoryId: number
 ): Promise<Product[]> {
@@ -180,15 +186,14 @@ export async function createProduct(
   }
   const result = await getDb().runAsync(
     `INSERT INTO products
-       (category_id, name, description, variations, notes,
+       (category_id, name, description, variations,
         image_uri, link, price, quantity, store)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.category_id,
       data.name,
       data.description ?? null,
       data.variations  ?? null,
-      data.notes       ?? null,
       data.image_uri   ?? null,
       data.link        ?? null,
       data.price       ?? 0,
@@ -217,7 +222,6 @@ export async function updateProduct(
        name        = COALESCE(?, name),
        description = COALESCE(?, description),
        variations  = COALESCE(?, variations),
-       notes       = COALESCE(?, notes),
        image_uri   = COALESCE(?, image_uri),
        link        = COALESCE(?, link),
        price       = COALESCE(?, price),
@@ -228,7 +232,6 @@ export async function updateProduct(
       data.name        ?? null,
       data.description ?? null,
       data.variations  ?? null,
-      data.notes       ?? null,
       data.image_uri   ?? null,
       data.link        ?? null,
       data.price       ?? null,

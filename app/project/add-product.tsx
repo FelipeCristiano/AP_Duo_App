@@ -9,8 +9,8 @@ import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
 import { theme } from '@/constants/theme'
 import {
-  createProduct, updateProduct,
-  ProductVariation, stringifyVariations,
+  createProduct, updateProduct, getProductById,
+  ProductVariation, stringifyVariations, parseVariations,
 } from '@/services/db/products'
 import { scrapeProduct, isValidUrl, ScrapedProduct } from '@/services/scraper'
 import { showAlert } from '@/components/Dialog'
@@ -111,7 +111,6 @@ export default function AddProductScreen() {
   const [price,       setPrice]       = useState('')
   const [quantity,    setQuantity]    = useState('1')
   const [store,       setStore]       = useState('')
-  const [notes,       setNotes]       = useState('')
   const [variations,  setVariations]  = useState<ProductVariation[]>([])
   const [varLabel,    setVarLabel]    = useState('')
   const [varValue,    setVarValue]    = useState('')
@@ -124,6 +123,17 @@ export default function AddProductScreen() {
   // ── Carregar produto existente (edição) ────────────
   useEffect(() => {
     if (!isEditing) return
+    getProductById(Number(productId)).then(p => {
+      if (!p) return
+      setLink(p.link ?? '')
+      setName(p.name)
+      setDescription(p.description ?? '')
+      setImageUri(p.image_uri ?? null)
+      setPrice(p.price > 0 ? p.price.toFixed(2).replace('.', ',') : '')
+      setQuantity(String(p.quantity ?? 1))
+      setStore(p.store ?? '')
+      setVariations(parseVariations(p.variations))
+    })
   }, [isEditing])
 
   // ── Scraping ───────────────────────────────────────
@@ -214,7 +224,7 @@ export default function AddProductScreen() {
         variations:  variations.length > 0
           ? stringifyVariations(variations)
           : null,
-        notes:     notes.trim() || null,
+
         image_uri: imageUri,
         link:      link.trim() || null,
         price:     parsePrice(price),
@@ -475,22 +485,6 @@ export default function AddProductScreen() {
           </View>
         </View>
 
-        <View style={styles.divider} />
-
-        {/* ── Seção 4: Observações ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Observações</Text>
-          <TextInput
-            style={[styles.input, styles.inputMultiline]}
-            placeholder="Observações internas sobre o produto..."
-            placeholderTextColor={theme.colors.inkXLight}
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
-        </View>
 
       </ScrollView>
 

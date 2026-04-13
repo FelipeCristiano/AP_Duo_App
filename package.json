@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "electron:dev": "concurrently \"expo start --web\" \"wait-on http://localhost:8081 && electron main.js\"",
-    "electron:build": "expo export -p web && electron-builder --win"
+    "electron:build": "expo export -p web && cross-env WIN_CSC_LINK= CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --publish never"
   },
   "dependencies": {
     "@expo-google-fonts/cormorant-garamond": "^0.4.1",

@@ -174,6 +174,8 @@ ipcMain.handle('print-to-pdf', async (_event, html, fileName) => {
 
   const win = new BrowserWindow({
     show: false,
+    width: 794,
+    height: 1123,
     webPreferences: { nodeIntegration: false, contextIsolation: true },
   })
 
@@ -191,6 +193,118 @@ ipcMain.handle('print-to-pdf', async (_event, html, fileName) => {
   fs.writeFileSync(outFile, pdfData)
 
   return outFile
+})
+
+// ── Scraping com JS (BrowserWindow oculto) ────────────
+ipcMain.handle('scrape-product', async (_event, url) => {
+  const win = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 800,
+    webPreferences: { nodeIntegration: false, contextIsolation: false, javascript: true },
+  })
+
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('timeout')), 15000)
+      win.webContents.once('did-finish-load', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+      win.loadURL(url, {
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      }).catch(reject)
+    })
+
+    // Aguarda JS da página renderizar preços/variantes
+    await new Promise(r => setTimeout(r, 2500))
+
+    const result = await win.webContents.executeJavaScript(`
+      (() => {
+        try {
+          const variantId = new URLSearchParams(window.location.search).get('variant')
+
+          // 1. JSON-LD (agora executado pelo JS da página)
+          for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+            try {
+              const d = JSON.parse(s.textContent)
+              const entries = Array.isArray(d) ? d : [d]
+              for (const entry of entries) {
+                const product = entry['@type'] === 'Product' ? entry
+                  : entry['@graph']?.find(g => g['@type'] === 'Product')
+                if (!product?.name) continue
+
+                let price = 0
+                const offers = product.offers
+                if (variantId && Array.isArray(offers)) {
+                  const match = offers.find(o =>
+                    String(o.url || '').includes('variant=' + variantId) ||
+                    String(o.sku || '') === variantId
+                  )
+                  if (match?.price) price = parseFloat(String(match.price))
+                }
+                if (!price) {
+                  const o = Array.isArray(offers) ? offers[0] : offers
+                  price = o?.price ? parseFloat(String(o.price)) : 0
+                }
+
+                const img = Array.isArray(product.image) ? product.image[0]
+                  : typeof product.image === 'string' ? product.image
+                  : product.image?.url ?? null
+
+                return { name: product.name, price, image_uri: img }
+              }
+            } catch {}
+          }
+
+          // 2. Shopify — variante no estado global
+          try {
+            const shopifyMeta = window.meta || window.__st?.a || window.ShopifyAnalytics?.meta
+            if (shopifyMeta?.product && variantId) {
+              const variants = shopifyMeta.product.variants || []
+              const v = variants.find(v => String(v.id) === variantId)
+              if (v) {
+                const price = (v.price || 0) / 100
+                const suffix = v.title && v.title !== 'Default Title' ? ' — ' + v.title : ''
+                const img = document.querySelector('meta[property="og:image"]')?.content || null
+                return { name: (shopifyMeta.product.title || document.title) + suffix, price, image_uri: img }
+              }
+            }
+          } catch {}
+
+          // 3. og:title + seletores de preço do DOM renderizado
+          const title = document.querySelector('meta[property="og:title"]')?.content || document.title
+          const image = document.querySelector('meta[property="og:image"]')?.content || null
+
+          const priceSelectors = [
+            '[data-variant-price]', '[data-product-price]',
+            '.price--main .money', '.product-price__price',
+            '[itemprop="price"]', '.current-price', '.sale-price',
+            '.product__price', '.price-item--sale', '.price-item--regular',
+            '.preco-por', '.preco-avista', '.actual-price',
+          ]
+          let priceRaw = ''
+          for (const sel of priceSelectors) {
+            const el = document.querySelector(sel)
+            if (el) {
+              priceRaw = el.getAttribute('content') || el.getAttribute('data-price') || el.textContent || ''
+              if (/\d/.test(priceRaw)) break
+            }
+          }
+
+          return { name: title?.trim() || null, price: priceRaw.trim(), image_uri: image }
+        } catch (e) {
+          return { error: e.message }
+        }
+      })()
+    `)
+
+    return result ?? null
+  } catch {
+    return null
+  } finally {
+    win.destroy()
+  }
 })
 
 ipcMain.handle('open-file', async (_event, filePath) => {

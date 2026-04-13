@@ -10,8 +10,12 @@ import * as ImagePicker from 'expo-image-picker'
 import { Image } from 'expo-image'
 import { theme } from '@/constants/theme'
 import { getProjectById, updateProject, ProjectStatus } from '@/services/db/projects'
-import { showAlert } from '@/components/Dialog'
-import Svg, { Path, Circle, Polyline } from 'react-native-svg'
+import {
+  getCategoriesByProject, createCategory, updateCategory, deleteCategory,
+  Category,
+} from '@/services/db/products'
+import { showAlert, showConfirm } from '@/components/Dialog'
+import Svg, { Path, Circle, Polyline, Line } from 'react-native-svg'
 
 // ── Ícones ─────────────────────────────────────────────
 function IconArrowLeft() {
@@ -36,6 +40,22 @@ function IconCheck({ color = theme.colors.white, size = 14 }) {
     </Svg>
   )
 }
+function IconPlus({ color = theme.colors.white, size = 16 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
+      <Line x1={12} y1={5} x2={12} y2={19} />
+      <Line x1={5} y1={12} x2={19} y2={12} />
+    </Svg>
+  )
+}
+function IconX({ color = theme.colors.inkLight, size = 12 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.5}>
+      <Line x1={18} y1={6} x2={6} y2={18} />
+      <Line x1={6} y1={6} x2={18} y2={18} />
+    </Svg>
+  )
+}
 
 // ── Tipos ──────────────────────────────────────────────
 const STATUS_OPTIONS: { key: ProjectStatus; label: string }[] = [
@@ -51,9 +71,16 @@ const ROOM_TYPES = [
   'Área Externa', 'Projeto Completo',
 ]
 
+const ROOM_SUGGESTIONS = [
+  'Sala de Estar', 'Sala de Jantar', 'Cozinha',
+  'Quarto Casal', 'Quarto Filho', 'Banheiro',
+  'Varanda', 'Home Office', 'Área Gourmet',
+  'Lavanderia', 'Hall de Entrada',
+]
+
 // ── Step indicator ─────────────────────────────────────
 function StepBar({ current }: { current: number }) {
-  const steps = ['Informações', 'Visual']
+  const steps = ['Informações', 'Visual', 'Cômodos']
   return (
     <View style={styles.stepBar}>
       {steps.map((label, i) => {
@@ -120,21 +147,32 @@ export default function EditProjectScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const projectId = Number(id)
 
-  const [loading,  setSaving]   = useState(true)
+  const [loading,  setLoading]  = useState(true)
   const [step,     setStep]     = useState(1)
-  const [saving,   setIsSaving] = useState(false)
+  const [saving,   setSaving]   = useState(false)
 
-  const [name,        setName]        = useState('')
-  const [client,      setClient]      = useState('')
-  const [clientEmail, setClientEmail] = useState('')
-  const [description, setDescription] = useState('')
-  const [roomType,    setRoomType]    = useState('')
-  const [status,      setStatus]      = useState<ProjectStatus>('draft')
-  const [logoUri,     setLogoUri]     = useState<string | null>(null)
-  const [coverUri,    setCoverUri]    = useState<string | null>(null)
+  // Step 1 — Informações
+  const [name,          setName]          = useState('')
+  const [client,        setClient]        = useState('')
+  const [clientEmail,   setClientEmail]   = useState('')
+  const [description,   setDescription]   = useState('')
+  const [roomType,      setRoomType]      = useState('')
+  const [roomTypeInput, setRoomTypeInput] = useState('')
+  const [status,        setStatus]        = useState<ProjectStatus>('draft')
+
+  // Step 2 — Visual
+  const [logoUri,  setLogoUri]  = useState<string | null>(null)
+  const [coverUri, setCoverUri] = useState<string | null>(null)
+
+  // Step 3 — Cômodos
+  const [categories,    setCategories]    = useState<Category[]>([])
+  const [newRoomInput,  setNewRoomInput]  = useState('')
 
   useEffect(() => {
-    getProjectById(projectId).then(async p => {
+    Promise.all([
+      getProjectById(projectId),
+      getCategoriesByProject(projectId),
+    ]).then(async ([p, cats]) => {
       if (!p) {
         await showAlert('Projeto não encontrado.', 'Erro')
         router.back()
@@ -148,7 +186,8 @@ export default function EditProjectScreen() {
       setStatus(p.status)
       setLogoUri(p.logo_uri)
       setCoverUri(p.cover_uri)
-      setSaving(false)
+      setCategories(cats)
+      setLoading(false)
     })
   }, [projectId])
 
@@ -166,19 +205,48 @@ export default function EditProjectScreen() {
     if (!result.canceled && result.assets[0]) setter(result.assets[0].uri)
   }, [])
 
+  // ── Cômodos ────────────────────────────────────────
+  const handleAddRoom = async (name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed || categories.some(c => c.name === trimmed)) return
+    const order = categories.length
+    const newId = await createCategory(projectId, trimmed, order)
+    setCategories(prev => [...prev, { id: newId, project_id: projectId, name: trimmed, order_idx: order }])
+    setNewRoomInput('')
+  }
+
+  const handleRenameRoom = async (id: number, newName: string) => {
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    await updateCategory(id, trimmed)
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, name: trimmed } : c))
+  }
+
+  const handleDeleteRoom = async (id: number) => {
+    const confirmed = await showConfirm(
+      'Remover este cômodo? Os produtos nele também serão removidos.',
+      'Remover cômodo',
+      { confirmText: 'Remover', danger: true }
+    )
+    if (!confirmed) return
+    await deleteCategory(id)
+    setCategories(prev => prev.filter(c => c.id !== id))
+  }
+
+  // ── Navegação ──────────────────────────────────────
   const canAdvance = () => {
     if (step === 1) return name.trim().length > 0 && client.trim().length > 0
     return true
   }
 
   const handleNext = () => {
-    if (step < 2) { setStep(2); return }
+    if (step < 3) { setStep(s => s + 1); return }
     handleSave()
   }
 
   const handleSave = async () => {
     if (saving) return
-    setIsSaving(true)
+    setSaving(true)
     try {
       await updateProject(projectId, {
         name:         name.trim(),
@@ -194,7 +262,7 @@ export default function EditProjectScreen() {
     } catch {
       await showAlert('Não foi possível salvar as alterações.', 'Erro')
     } finally {
-      setIsSaving(false)
+      setSaving(false)
     }
   }
 
@@ -215,7 +283,7 @@ export default function EditProjectScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => step > 1 ? setStep(1) : (router.canGoBack() ? router.back() : router.replace(`/project/${projectId}`))}
+          onPress={() => step > 1 ? setStep(s => s - 1) : (router.canGoBack() ? router.back() : router.replace(`/project/${projectId}`))}
         >
           <IconArrowLeft />
         </TouchableOpacity>
@@ -287,17 +355,46 @@ export default function EditProjectScreen() {
             </Field>
 
             <Field label="Tipo de ambiente">
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
-                {ROOM_TYPES.map(type => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.pill, roomType === type && styles.pillActive]}
-                    onPress={() => setRoomType(prev => prev === type ? '' : type)}
-                  >
-                    <Text style={[styles.pillText, roomType === type && styles.pillTextActive]}>{type}</Text>
+              <View style={styles.addRoomRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Ex: Projeto Completo, Escritório..."
+                  placeholderTextColor={theme.colors.inkXLight}
+                  value={roomTypeInput}
+                  onChangeText={setRoomTypeInput}
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    const val = roomTypeInput.trim()
+                    if (val) { setRoomType(val); setRoomTypeInput('') }
+                  }}
+                />
+                <TouchableOpacity
+                  style={styles.addRoomBtn}
+                  onPress={() => {
+                    const val = roomTypeInput.trim()
+                    if (val) { setRoomType(val); setRoomTypeInput('') }
+                  }}
+                >
+                  <IconPlus />
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.pillsRow, { marginTop: 12 }]}>
+                {ROOM_TYPES.filter(t => t !== roomType).map(type => (
+                  <TouchableOpacity key={type} style={styles.pill} onPress={() => setRoomType(type)}>
+                    <Text style={styles.pillText}>+ {type}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+              {roomType !== '' && (
+                <View style={[styles.roomsList, { marginTop: 12 }]}>
+                  <View style={styles.roomItem}>
+                    <Text style={styles.roomName}>{roomType}</Text>
+                    <TouchableOpacity onPress={() => setRoomType('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.roomRemove}>
+                      <IconX />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </Field>
 
             <Field label="Status">
@@ -344,6 +441,84 @@ export default function EditProjectScreen() {
           </View>
         )}
 
+        {/* ════ STEP 3 — Cômodos ════ */}
+        {step === 3 && (
+          <View style={styles.stepContent}>
+            <Text style={styles.stepTitle}>Cômodos do projeto</Text>
+            <Text style={styles.stepDesc}>
+              Adicione, renomeie ou remova os ambientes deste projeto.
+            </Text>
+
+            <Field label="Adicionar cômodo">
+              <View style={styles.addRoomRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Ex: Quarto Casal, Sala de Estar..."
+                  placeholderTextColor={theme.colors.inkXLight}
+                  value={newRoomInput}
+                  onChangeText={setNewRoomInput}
+                  onSubmitEditing={() => handleAddRoom(newRoomInput)}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity style={styles.addRoomBtn} onPress={() => handleAddRoom(newRoomInput)}>
+                  <IconPlus />
+                </TouchableOpacity>
+              </View>
+            </Field>
+
+            <Field label="Sugestões rápidas">
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsRow}>
+                {ROOM_SUGGESTIONS
+                  .filter(s => !categories.some(c => c.name === s))
+                  .map(sug => (
+                    <TouchableOpacity key={sug} style={styles.pill} onPress={() => handleAddRoom(sug)}>
+                      <Text style={styles.pillText}>+ {sug}</Text>
+                    </TouchableOpacity>
+                  ))}
+              </ScrollView>
+            </Field>
+
+            {categories.length > 0 && (
+              <Field label={`Cômodos (${categories.length})`}>
+                <View style={styles.roomsList}>
+                  {categories.map((cat, index) => (
+                    <View key={cat.id} style={styles.roomItem}>
+                      <View style={styles.roomIndex}>
+                        <Text style={styles.roomIndexText}>{index + 1}</Text>
+                      </View>
+                      <TextInput
+                        style={styles.roomNameInput}
+                        value={cat.name}
+                        onChangeText={text =>
+                          setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, name: text } : c))
+                        }
+                        onBlur={() => handleRenameRoom(cat.id, cat.name)}
+                        onSubmitEditing={() => handleRenameRoom(cat.id, cat.name)}
+                        returnKeyType="done"
+                      />
+                      <TouchableOpacity
+                        onPress={() => handleDeleteRoom(cat.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={styles.roomRemove}
+                      >
+                        <IconX size={14} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              </Field>
+            )}
+
+            {categories.length === 0 && (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoBoxText}>
+                  Nenhum cômodo ainda. Adicione pelo campo acima ou escolha uma sugestão.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
       </ScrollView>
 
       {/* Footer */}
@@ -355,9 +530,9 @@ export default function EditProjectScreen() {
           activeOpacity={0.85}
         >
           <Text style={styles.btnNextText}>
-            {saving ? 'Salvando...' : step < 2 ? 'Próximo  1/2' : 'Salvar alterações'}
+            {saving ? 'Salvando...' : step < 3 ? `Próximo  ${step}/3` : 'Salvar alterações'}
           </Text>
-          {!saving && step === 2 && <IconCheck />}
+          {!saving && step === 3 && <IconCheck />}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -429,11 +604,9 @@ const styles = StyleSheet.create({
   },
   inputMultiline: { minHeight: 90, paddingTop: 12 },
 
-  pillsRow:      { gap: 8, paddingBottom: 4 },
-  pill:          { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.white },
-  pillActive:    { backgroundColor: theme.colors.ink, borderColor: theme.colors.ink },
-  pillText:      { fontFamily: 'DMSans_400Regular', fontSize: 13, color: theme.colors.inkMid },
-  pillTextActive:{ color: theme.colors.white },
+  pillsRow:       { gap: 8, paddingBottom: 4 },
+  pill:           { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.white },
+  pillText:       { fontFamily: 'DMSans_400Regular', fontSize: 13, color: theme.colors.inkMid },
 
   statusRow:           { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   statusBtn:           { paddingHorizontal: 16, paddingVertical: 10, borderRadius: theme.radius.sm, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.white },
@@ -449,6 +622,20 @@ const styles = StyleSheet.create({
   uploadSub:         { fontFamily: 'DMSans_400Regular', fontSize: 11, color: theme.colors.inkXLight },
   removeImg:         { marginTop: 8, alignSelf: 'flex-end' },
   removeImgText:     { fontFamily: 'DMSans_400Regular', fontSize: 12, color: theme.colors.danger },
+
+  addRoomRow:    { flexDirection: 'row', gap: 10 },
+  addRoomBtn:    { width: 48, height: 48, backgroundColor: theme.colors.ink, borderRadius: theme.radius.sm, alignItems: 'center', justifyContent: 'center' },
+
+  roomsList:     { gap: 10 },
+  roomItem:      { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: theme.colors.white, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, paddingVertical: 10, paddingHorizontal: 12 },
+  roomIndex:     { width: 26, height: 26, borderRadius: 13, backgroundColor: theme.colors.bgPanel, alignItems: 'center', justifyContent: 'center' },
+  roomIndexText: { fontFamily: 'DMSans_500Medium', fontSize: 12, color: theme.colors.inkMid },
+  roomName:      { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 14, color: theme.colors.ink },
+  roomNameInput: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 14, color: theme.colors.ink, paddingVertical: 2 },
+  roomRemove:    { padding: 4 },
+
+  infoBox:     { backgroundColor: theme.colors.bgPanel, borderRadius: theme.radius.md, padding: 14, marginTop: 4 },
+  infoBoxText: { fontFamily: 'DMSans_400Regular', fontSize: 13, color: theme.colors.inkMid, lineHeight: 20 },
 
   footer:          { padding: theme.spacing.lg, paddingBottom: 32, backgroundColor: theme.colors.bg, borderTopWidth: 1, borderTopColor: theme.colors.border },
   btnNext:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: theme.colors.ink, paddingVertical: 16, borderRadius: theme.radius.sm },

@@ -15,7 +15,9 @@ contextBridge.exposeInMainWorld('electron', {
   writeData:      (data)     => ipcRenderer.invoke('write-data', data),
   pickDataFolder: ()         => ipcRenderer.invoke('pick-data-folder'),
   setDataPath:    (folder)   => ipcRenderer.invoke('set-data-path', folder),
-  openDataFolder: ()         => ipcRenderer.invoke('open-data-folder'),
+  openDataFolder:  ()        => ipcRenderer.invoke('open-data-folder'),
+  // Scraping com JS
+  scrapeProduct:   (url)     => ipcRenderer.invoke('scrape-product', url),
 })
 
 // ── Drag region + estilos globais ─────────────────────

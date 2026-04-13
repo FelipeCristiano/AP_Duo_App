@@ -123,9 +123,6 @@ function ProductCard({
         {variations.map((v, i) => (
           <Text key={i} style={styles.productVariation}>{v.label}: {v.value}</Text>
         ))}
-        {product.notes ? (
-          <Text style={styles.productNotes} numberOfLines={1}>{product.notes}</Text>
-        ) : null}
       </View>
 
       {/* Preços + ações */}

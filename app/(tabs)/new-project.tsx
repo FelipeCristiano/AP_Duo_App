@@ -161,12 +161,13 @@ export default function NewProjectScreen() {
   const [step, setStep] = useState(1)
 
   // Step 1 — Informações
-  const [name,        setName]        = useState('')
-  const [client,      setClient]      = useState('')
-  const [clientEmail, setClientEmail] = useState('')
-  const [description, setDescription] = useState('')
-  const [roomType,    setRoomType]    = useState('')
-  const [status,      setStatus]      = useState<Status>('draft')
+  const [name,          setName]          = useState('')
+  const [client,        setClient]        = useState('')
+  const [clientEmail,   setClientEmail]   = useState('')
+  const [description,   setDescription]   = useState('')
+  const [roomType,      setRoomType]      = useState('')
+  const [roomTypeInput, setRoomTypeInput] = useState('')
+  const [status,        setStatus]        = useState<Status>('draft')
 
   // Step 2 — Visual
   const [logoUri,  setLogoUri]  = useState<string | null>(null)
@@ -344,23 +345,58 @@ export default function NewProjectScreen() {
             </Field>
 
             <Field label="Tipo de ambiente">
+              <View style={styles.addRoomRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Ex: Projeto Completo, Escritório..."
+                  placeholderTextColor={theme.colors.inkXLight}
+                  value={roomTypeInput}
+                  onChangeText={setRoomTypeInput}
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    const val = roomTypeInput.trim()
+                    if (val) { setRoomType(val); setRoomTypeInput('') }
+                  }}
+                />
+                <TouchableOpacity
+                  style={styles.addRoomBtn}
+                  onPress={() => {
+                    const val = roomTypeInput.trim()
+                    if (val) { setRoomType(val); setRoomTypeInput('') }
+                  }}
+                >
+                  <IconPlus />
+                </TouchableOpacity>
+              </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.pillsRow}
+                contentContainerStyle={[styles.pillsRow, { marginTop: 12 }]}
               >
-                {ROOM_TYPES.map(type => (
+                {ROOM_TYPES.filter(t => t !== roomType).map(type => (
                   <TouchableOpacity
                     key={type}
-                    style={[styles.pill, roomType === type && styles.pillActive]}
-                    onPress={() => setRoomType(prev => prev === type ? '' : type)}
+                    style={styles.pill}
+                    onPress={() => setRoomType(type)}
                   >
-                    <Text style={[styles.pillText, roomType === type && styles.pillTextActive]}>
-                      {type}
-                    </Text>
+                    <Text style={styles.pillText}>+ {type}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+              {roomType !== '' && (
+                <View style={[styles.roomsList, { marginTop: 12 }]}>
+                  <View style={styles.roomItem}>
+                    <Text style={styles.roomName}>{roomType}</Text>
+                    <TouchableOpacity
+                      onPress={() => setRoomType('')}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={styles.roomRemove}
+                    >
+                      <IconX />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
             </Field>
 
             <Field label="Status inicial">

@@ -53,9 +53,15 @@ function buildRoomHtml(room: RoomSection): string {
       ? `<img class="prod-img" src="${p.imageBase64}" />`
       : `<div class="prod-img-empty"></div>`
 
-    const vars = p.variations
-      ? p.variations.split('|').map(v => `<span class="var-item">${v}</span>`).join('')
-      : ''
+    let vars = ''
+    if (p.variations) {
+      try {
+        const parsed: Array<{label: string; value: string}> = JSON.parse(p.variations)
+        vars = parsed.map(v => `<span class="var-item">${v.label}: ${v.value}</span>`).join('')
+      } catch {
+        vars = p.variations.split('|').map(v => `<span class="var-item">${v}</span>`).join('')
+      }
+    }
 
     return `
       <tr class="prod-row">
@@ -124,17 +130,19 @@ export function buildPdfHtml({
     @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { size: A4; margin: 0; }
 
     body { font-family: 'DM Sans', sans-serif; background: #FDFCFA; color: #1A1A1A; }
 
     /* ── Capa ── */
     .cover {
-      width: 100%; height: 100vh; min-height: 900px;
+      width: 100%; height: 297mm;
       ${coverStyle}
       display: flex; flex-direction: column;
       justify-content: space-between;
       padding: 56px 64px;
       position: relative;
+      overflow: hidden;
       page-break-after: always;
     }
     .cover::before {
@@ -191,7 +199,7 @@ export function buildPdfHtml({
     .prod-store { font-size: 10px; color: #9A8F85; }
     .prod-desc { font-size: 10.5px; color: #5C5650; line-height: 1.5; margin-bottom: 4px; }
     .prod-vars { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-    .var-item { font-size: 9.5px; color: #7A7068; }
+    .var-item { display: inline-block; background: #1A1A1A; color: #FFFFFF; font-size: 8.5px; font-weight: 500; letter-spacing: 0.4px; padding: 2px 7px; border-radius: 3px; }
     .prod-notes { font-size: 9.5px; color: #9A8F85; font-style: italic; margin-top: 4px; }
 
     .grand-total {
@@ -219,17 +227,10 @@ export function buildPdfHtml({
       <img src="${LOGO_WHITE_B64}" alt="${officeName}" />
     </div>
     <div class="cover-body">
-      <div class="cover-eyebrow">Proposta de Especificação</div>
+      <div class="cover-eyebrow">Orçamentação - Lista de Compras</div>
       <div class="cover-title">${project.name}</div>
       <div class="cover-client">${project.client}</div>
       ${project.client_email ? `<div class="cover-email">${project.client_email}</div>` : ''}
-    </div>
-    <div class="cover-footer">
-      <div>
-        <div class="cover-total-label">Total estimado</div>
-        <div class="cover-total-value">${fmt(total)}</div>
-      </div>
-      <div class="cover-accent"></div>
     </div>
   </div>
 
@@ -237,7 +238,7 @@ export function buildPdfHtml({
     <div class="page-header">
       <div>
         <div class="page-header-title">${project.name}</div>
-        <div class="page-header-sub">${project.client} — Especificação de produtos</div>
+        <div class="page-header-sub">${project.client} — Lista de Compras</div>
       </div>
       <img src="${LOGO_WHITE_B64}" style="height:28px; opacity:0.25;" />
     </div>
