@@ -175,11 +175,36 @@ ipcMain.handle('print-to-pdf', async (_event, html, fileName) => {
   const win = new BrowserWindow({
     show: false,
     width: 794,
-    height: 1123,
+    height: 1200,
     webPreferences: { nodeIntegration: false, contextIsolation: true },
   })
 
   await win.loadFile(tmpHtml)
+
+  // Aguarda document.readyState === 'complete' + todas as imagens carregadas
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      function waitForImages() {
+        const imgs = Array.from(document.images)
+        const pending = imgs.filter(img => !img.complete)
+        if (pending.length === 0) { resolve(); return }
+        let done = 0
+        pending.forEach(img => {
+          img.addEventListener('load',  () => { if (++done >= pending.length) resolve() })
+          img.addEventListener('error', () => { if (++done >= pending.length) resolve() })
+        })
+        setTimeout(resolve, 8000) // timeout máximo de 8s
+      }
+      if (document.readyState === 'complete') {
+        waitForImages()
+      } else {
+        window.addEventListener('load', waitForImages, { once: true })
+        setTimeout(resolve, 10000)
+      }
+    })
+  `)
+
+  // Margem adicional para fontes e layout estabilizarem
   await new Promise(r => setTimeout(r, 600))
 
   const pdfData = await win.webContents.printToPDF({
@@ -220,60 +245,59 @@ ipcMain.handle('scrape-product', async (_event, url) => {
     await new Promise(r => setTimeout(r, 2500))
 
     const result = await win.webContents.executeJavaScript(`
-      (() => {
+      (async () => {
         try {
           const variantId = new URLSearchParams(window.location.search).get('variant')
+          const pathname  = window.location.pathname.replace(/\\/$/, '')
 
-          // 1. JSON-LD (agora executado pelo JS da página)
-          for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+          // 1. Same-origin Shopify JSON API — mais confiável, sem CORS, retorna só o produto da página
+          const shopifyPaths = [
+            pathname,
+            pathname.replace('/produtos/', '/products/'),
+            pathname.replace('/products/', '/produtos/'),
+          ]
+          for (const p of shopifyPaths) {
             try {
-              const d = JSON.parse(s.textContent)
-              const entries = Array.isArray(d) ? d : [d]
-              for (const entry of entries) {
-                const product = entry['@type'] === 'Product' ? entry
-                  : entry['@graph']?.find(g => g['@type'] === 'Product')
-                if (!product?.name) continue
+              const r = await fetch(p + '.json', { headers: { Accept: 'application/json' } })
+              if (!r.ok) continue
+              const d = await r.json()
+              const prod = d.product
+              if (!prod?.title) continue
 
-                let price = 0
-                const offers = product.offers
-                if (variantId && Array.isArray(offers)) {
-                  const match = offers.find(o =>
-                    String(o.url || '').includes('variant=' + variantId) ||
-                    String(o.sku || '') === variantId
-                  )
-                  if (match?.price) price = parseFloat(String(match.price))
-                }
-                if (!price) {
-                  const o = Array.isArray(offers) ? offers[0] : offers
-                  price = o?.price ? parseFloat(String(o.price)) : 0
-                }
+              const v = variantId
+                ? prod.variants?.find(v => String(v.id) === variantId)
+                : prod.variants?.[0]
 
-                const img = Array.isArray(product.image) ? product.image[0]
-                  : typeof product.image === 'string' ? product.image
-                  : product.image?.url ?? null
+              const price  = v?.price ? parseFloat(v.price) : 0
+              const suffix = v?.title && v.title !== 'Default Title' ? ' — ' + v.title : ''
+              const imgId  = v?.image_id
+              const img    = imgId
+                ? prod.images?.find(i => i.id === imgId)?.src
+                : prod.images?.[0]?.src
 
-                return { name: product.name, price, image_uri: img }
-              }
+              return { name: prod.title + suffix, price, image_uri: img || null }
             } catch {}
           }
 
-          // 2. Shopify — variante no estado global
+          // 2. Shopify estado global (fallback)
           try {
-            const shopifyMeta = window.meta || window.__st?.a || window.ShopifyAnalytics?.meta
-            if (shopifyMeta?.product && variantId) {
-              const variants = shopifyMeta.product.variants || []
-              const v = variants.find(v => String(v.id) === variantId)
+            const meta = window.meta || window.__st?.a || window.ShopifyAnalytics?.meta
+            if (meta?.product) {
+              const variants = meta.product.variants || []
+              const v = variantId
+                ? variants.find(v => String(v.id) === variantId)
+                : variants[0]
               if (v) {
-                const price = (v.price || 0) / 100
+                const price  = (v.price || 0) / 100
                 const suffix = v.title && v.title !== 'Default Title' ? ' — ' + v.title : ''
-                const img = document.querySelector('meta[property="og:image"]')?.content || null
-                return { name: (shopifyMeta.product.title || document.title) + suffix, price, image_uri: img }
+                const img    = document.querySelector('meta[property="og:image"]')?.content || null
+                return { name: (meta.product.title || document.title) + suffix, price, image_uri: img }
               }
             }
           } catch {}
 
-          // 3. og:title + seletores de preço do DOM renderizado
-          const title = document.querySelector('meta[property="og:title"]')?.content || document.title
+          // 3. og:title + seletores de preço do DOM (genérico)
+          const title = document.querySelector('meta[property="og:title"]')?.content?.trim() || document.title
           const image = document.querySelector('meta[property="og:image"]')?.content || null
 
           const priceSelectors = [
@@ -288,11 +312,11 @@ ipcMain.handle('scrape-product', async (_event, url) => {
             const el = document.querySelector(sel)
             if (el) {
               priceRaw = el.getAttribute('content') || el.getAttribute('data-price') || el.textContent || ''
-              if (/\d/.test(priceRaw)) break
+              if (/\\d/.test(priceRaw)) break
             }
           }
 
-          return { name: title?.trim() || null, price: priceRaw.trim(), image_uri: image }
+          return { name: title || null, price: priceRaw.trim(), image_uri: image }
         } catch (e) {
           return { error: e.message }
         }

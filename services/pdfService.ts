@@ -37,7 +37,7 @@ async function buildRooms(projectId: number): Promise<RoomSection[]> {
     const products = await getProductsByCategory(category.id)
     if (products.length === 0) continue
     const mappedProducts = await Promise.all(
-      products.slice(0, 8).map(async p => ({
+      products.map(async p => ({
         name:        p.name,
         store:       p.store       ?? null,
         description: p.description ?? null,

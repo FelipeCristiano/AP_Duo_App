@@ -45,7 +45,7 @@ function fmt(value: number): string {
 }
 
 // ── Gera HTML de um cômodo ─────────────────────────────
-function buildRoomHtml(room: RoomSection): string {
+function buildRoomHtml(room: RoomSection, isFirst = false): string {
   const subtotal = room.products.reduce((s, p) => s + p.price * p.quantity, 0)
 
   const rows = room.products.map(p => {
@@ -79,8 +79,9 @@ function buildRoomHtml(room: RoomSection): string {
       </tr>`
   }).join('')
 
+  const roomClass = isFirst ? 'room' : 'room room-break'
   return `
-    <div class="room">
+    <div class="${roomClass}">
       <div class="room-header">
         <span class="room-name">${room.name}</span>
         <span class="room-subtotal">${fmt(subtotal)}</span>
@@ -110,7 +111,7 @@ export function buildPdfHtml({
   office,
 }: BuildPdfHtmlParams): string {
 
-  const roomsHtml   = rooms.map(buildRoomHtml).join('')
+  const roomsHtml   = rooms.map((r, i) => buildRoomHtml(r, i === 0)).join('')
   const coverStyle  = coverBase64
     ? `background-image: url('${coverBase64}'); background-size: cover; background-position: center;`
     : `background-color: #1A1A1A;`
@@ -172,7 +173,10 @@ export function buildPdfHtml({
     .page-header-title { font-family: 'Cormorant Garamond', serif; font-size: 28px; font-weight: 300; color: #1A1A1A; }
     .page-header-sub { font-size: 11px; color: #9A8F85; margin-top: 4px; }
 
-    .room { margin-bottom: 40px; page-break-inside: avoid; }
+    .room { margin-bottom: 40px; }
+    .room-break { page-break-before: always; }
+    .room-header { page-break-after: avoid; }
+    .prod-row { page-break-inside: avoid; }
     .room-header {
       display: flex; justify-content: space-between; align-items: center;
       padding: 14px 0; margin-bottom: 4px;
